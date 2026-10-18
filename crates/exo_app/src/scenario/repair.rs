@@ -3,7 +3,7 @@ use super::items::{collect, items, outside};
 use walker_core::Frame as WalkFrame;
 use super::*;
 use crate::controls::Controls;
-use crate::dev_area::{layout::{junction_centre, junction_front, COOLANT_PUMP_AT, JUNCTION_BOX_SIZE, JUNCTION_LIFT}};
+use crate::dev_area::{layout::{junction_centre, junction_front, JUNCTION_BOX_SIZE, JUNCTION_LIFT}};
 use crate::dev_area::{dev::item_table, DevArea, DEV};
 use crate::items::Items;
 use crate::dev_area::ship::ReactorSim;
@@ -15,10 +15,6 @@ const DIGITS: [KeyCode; 8] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3,
 fn ground(w: &mut World, p: [f64; 2], lift: f64) -> DVec3 {
     let pl = planet(w);
     w.resource::<DevArea>().ground(&pl, p, lift).expect("the dev area is there").0
-}
-
-fn pump(w: &World) -> f64 {
-    items(w).reactor.as_ref().map_or(1.0, |r: &ReactorNews| r.pump.share)
 }
 
 fn junction(w: &World) -> f64 {
@@ -44,13 +40,8 @@ fn hits(w: &World) -> u32 {
     w.resource::<RepairSessions>().sessions.first().map_or(0, |h| h.hits)
 }
 
-/// The walker's eye looks at a machine's middle (area point, 0.6 m up). Aimed in the world frame:
+/// The walker's eye looks at junction box JB-1's middle: its cabinet hangs from `JUNCTION_LIFT`. Aimed in the world frame:
 /// on foot the walker's forward and pitch are world values (the shared `look_at` turns in the ship's).
-fn look(w: &mut World, at: [f64; 2]) {
-    look_up(w, at, 0.6);
-}
-
-/// The same, `lift` m up: junction box JB-1's cabinet hangs from `JUNCTION_LIFT`, so it is looked at in its middle.
 fn look_junction(w: &mut World) {
     look_up(w, junction_centre(0), JUNCTION_LIFT + JUNCTION_BOX_SIZE[1] * 0.5);
 }
@@ -82,18 +73,11 @@ fn stun(w: &World) -> f64 {
     ring(w).map_or(0.0, |p| p.stun)
 }
 
-/// Knocks the junction box or the pump down to `share` of full, on the host's room (the dev
+/// Knocks the junction box down to `share` of full, on the host's room (the dev
 /// console has no fault for it): the click test below half needs the machine below half.
 fn knock_junction(w: &mut World, share: f64) {
     let mut sim = w.resource_mut::<ReactorSim>();
     let cond = sim.room.junction_mut(0).condition_mut();
-    let max = cond.tuning().max;
-    cond.damage((1.0 - share) * max);
-}
-
-fn knock_pump(w: &mut World, share: f64) {
-    let mut sim = w.resource_mut::<ReactorSim>();
-    let cond = sim.room.pump_mut().condition_mut();
     let max = cond.tuning().max;
     cond.damage((1.0 - share) * max);
 }
@@ -153,113 +137,8 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
     s.extend(collect("screwdriver", "Screwdriver"));
     s.push(select("repair: the wrench is selected", "wrench"));
 
-    s.push(run("repair: the dev fault breaks the coolant pump", 5.0, |w, c| {
-        if c.t == 0.0 {
-            w.resource_mut::<Items>().ask_reactor(ReactorAsk::Trigger(ReactorFault::PumpBreak));
-            return None;
-        }
-        if c.t < 0.5 {
-            return None;
-        }
-        let share = pump(w);
-        c.v.insert("share0", share);
-        Some(format!("share {share:.2}"))
-    }));
-
-    s.push(run("repair: the walker stands at the pump", 3.0, |w, c| {
-        if c.t == 0.0 {
-            let feet = ground(w, [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 1.4], 0.0);
-            place_walker(w, feet);
-        }
-        look(w, COOLANT_PUMP_AT);
-        if c.t < 0.5 {
-            return None;
-        }
-        Some("at the pump".into())
-    }));
-
-    s.push(select("repair: the screwdriver is selected", "screwdriver"));
-    s.push(run("repair: the screwdriver at the pump does nothing", 3.0, |w, c| {
-        look(w, COOLANT_PUMP_AT);
-        if c.t < 0.3 && !c.v.contains_key("sent_wrong") {
-            return None;
-        }
-        if !c.v.contains_key("sent_wrong") {
-            lmb(w);
-            c.v.insert("sent_wrong", 1.0);
-            return None;
-        }
-        if c.t < 1.5 {
-            return None;
-        }
-        w.resource_mut::<Controls>().click = false;
-        let share = pump(w);
-        let (play, host) = (ring(w).is_none(), sessions(w) == 0);
-        check(c, play && host, "repair: no session starts with the wrong tool".into());
-        // The broken pump wears on its own; what matters is that nothing repairs it.
-        check(c, share <= c.v["share0"] + 1e-9, format!("repair: the pump is not repaired ({:.3} to {share:.3})", c.v["share0"]));
-        Some("nothing happens".into())
-    }));
-
-    s.push(select("repair: the wrench is selected again", "wrench"));
-    s.push(run("repair: the wrench at the pump starts a session", 3.0, |w, c| {
-        look(w, COOLANT_PUMP_AT);
-        if c.t < 0.3 && !c.v.contains_key("sent_wrench") {
-            return None;
-        }
-        if !c.v.contains_key("sent_wrench") {
-            lmb(w);
-            c.v.insert("sent_wrench", 1.0);
-            return None;
-        }
-        if c.t < 0.8 {
-            return None;
-        }
-        let started = ring(w).is_some() && sessions(w) == 1;
-        let still_wrench = items(w).client.view.slot(items(w).client.view.selected).is_some_and(|s| s.item.kind.as_str() == "wrench");
-        check(c, started, "repair: the wrench starts a session, host and client".into());
-        check(c, still_wrench, "repair: the wrench stays in the hand (LMB does not throw or use it)".into());
-        Some("session on".into())
-    }));
-
-    s.push(run("repair: a broken pump rises at once by holding (no ring, no hits)", 4.0, |w, c| {
-        look(w, COOLANT_PUMP_AT);
-        let zones = ring(w).map_or(0, |p| p.session.ring.zones.len()) as f64;
-        c.v.insert("zones", c.v.get("zones").copied().unwrap_or(0.0).max(zones));
-        if c.t < 2.5 {
-            return None;
-        }
-        check(c, c.v["zones"] == 0.0, "repair: no ring (no zones) with the minigame off".into());
-        check(c, hits(w) == 0, "repair: no hits (none come with the ring off)".into());
-        Some("held".into())
-    }));
-
-    s.push(run("repair: the pump rises at the normal speed while held", 5.0, |w, c| {
-        look(w, COOLANT_PUMP_AT);
-        if c.t < 0.2 {
-            c.v.insert("rise0", pump(w));
-            return None;
-        }
-        if c.t < 3.0 {
-            return None;
-        }
-        let rise = pump(w) - c.v["rise0"];
-        Some(format!("rise {rise:.3}"))
-    }));
-
-    // straight after, so the step watches for the session's end with the pump near full, having been full.
-    s.push(run("repair: the pump is repaired to full and the session ends", 90.0, |w, c| {
-        look(w, COOLANT_PUMP_AT);
-        let share = pump(w);
-        let peak = c.v.get("peak").copied().unwrap_or(0.0).max(share);
-        c.v.insert("peak", peak);
-        if peak >= 0.999 && ring(w).is_none() && sessions(w) == 0 {
-            w.resource_mut::<Controls>().click = false;
-            return Some(format!("full at {:.1} s", c.t));
-        }
-        None
-    }));
-
+    // The coolant pump has no housing now, so there is no wrench target for the by-hand rules (wrong tool, session, rise by holding);
+    // the junction box carries the same rules below, with the screwdriver.
     s.push(run("repair: a surge takes the junction box to 70 %", 5.0, |w, c| {
         if c.t == 0.0 {
             w.resource_mut::<Items>().ask_reactor(ReactorAsk::Trigger(ReactorFault::Surge));
@@ -400,61 +279,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         check(c, stun(w) == 0.0, "repair: the click does not stun".into());
         check(c, ring(w).is_some_and(|p| p.session.ring.zones.is_empty()), "repair: no zones at the junction box".into());
         check(c, junction(w) > c.v["j_share0"], format!("repair: the box still rises by holding ({:.3} to {:.3})", c.v["j_share0"], junction(w)));
-        Some(format!("burn {burn0:.2} to {burn_now:.2}"))
-    }));
-
-    s.push(run("repair: the fault knocks the coolant pump below half", 3.0, |w, c| {
-        if c.t == 0.0 {
-            knock_pump(w, 0.4);
-            return None;
-        }
-        if c.t < 0.5 || pump(w) >= 0.5 {
-            return None;
-        }
-        Some(format!("pump {:.2}", pump(w)))
-    }));
-    s.push(select("repair: the wrench is selected for the knock", "wrench"));
-    s.push(run("repair: the walker stands at the pump for the knock", 3.0, |w, c| {
-        if c.t == 0.0 {
-            let feet = ground(w, [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 1.4], 0.0);
-            place_walker(w, feet);
-        }
-        look(w, COOLANT_PUMP_AT);
-        if c.t < 0.5 {
-            return None;
-        }
-        Some("at the pump".into())
-    }));
-    s.push(run("repair: a click at the pump below half does nothing (no ring, no stun, no clank)", 12.0, |w, c| {
-        look(w, COOLANT_PUMP_AT);
-        if !c.v.contains_key("p_started") {
-            if c.t < 0.3 {
-                return None;
-            }
-            lmb(w);
-            c.v.insert("p_started", 1.0);
-            return None;
-        }
-        if !c.v.contains_key("p_click") {
-            if sessions(w) == 0 {
-                return None;
-            }
-            c.v.insert("p_burn0", burn(w));
-            c.v.insert("p_hurt0", w.resource::<RepairHurt>().at.unwrap_or(-1.0));
-            c.v.insert("p_share0", pump(w));
-            c.v.insert("p_click", c.t);
-            lmb(w);
-            return None;
-        }
-        if c.t - c.v["p_click"] < 2.0 {
-            return None;
-        }
-        let burn_now = burn(w);
-        let burn0 = c.v["p_burn0"];
-        check(c, burn_now <= burn0 + 1e-9, format!("repair: the click burns nothing ({burn0:.2} to {burn_now:.2})"));
-        check(c, stun(w) == 0.0, "repair: the click does not stun".into());
-        check(c, ring(w).is_some_and(|p| p.session.ring.zones.is_empty()), "repair: no zones at the pump".into());
-        check(c, pump(w) > c.v["p_share0"], format!("repair: the pump still rises by holding ({:.3} to {:.3})", c.v["p_share0"], pump(w)));
         Some(format!("burn {burn0:.2} to {burn_now:.2}"))
     }));
 }

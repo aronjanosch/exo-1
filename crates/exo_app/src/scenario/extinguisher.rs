@@ -4,7 +4,7 @@ use super::*;
 use crate::controls::Controls;
 use crate::dev_area::layout::CORRIDOR;
 use crate::dev_area::fire::Sprays;
-use crate::dev_area::{DevArea, ENGINEERING};
+use crate::dev_area::{DevArea, OPEN_GROUND};
 use crate::items::{Items, LOCAL};
 
 /// The rack's id in the dev area (`item_core::supply`'s file).
@@ -36,7 +36,7 @@ pub(super) fn extinguisher_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "extinguisher: a new one is at 100 %");
-            let at = ground(w, [ENGINEERING.centre[0] - 3.0, 4.0], 0.6);
+            let at = ground(w, [OPEN_GROUND[0] - 3.0, 4.0], 0.6);
             look_at(w, at);
             return false;
         }
@@ -115,7 +115,7 @@ pub(super) fn extinguisher_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "extinguisher: the spray works again");
-            let at = ground(w, [ENGINEERING.centre[0] - 3.0, 4.0], 0.6);
+            let at = ground(w, [OPEN_GROUND[0] - 3.0, 4.0], 0.6);
             look_at(w, at);
             lmb(w, true);
             return false;

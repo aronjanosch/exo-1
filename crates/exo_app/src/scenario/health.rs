@@ -4,7 +4,7 @@ use super::*;
 use crate::controls::Controls;
 use crate::crew_hud::{CrewHud, Vitals};
 use crate::dev_area::hazards::{GLOW_BARREL, HOT_PLATE, NO_AIR};
-use crate::dev_area::{area_of, DevArea, ENGINEERING, PAD_MAIN};
+use crate::dev_area::{area_of, DevArea, OPEN_GROUND, PAD_MAIN};
 use crate::health::{HealthState, OwnMobility, OwnVitals, UseHold};
 use crate::items::{Items, LOCAL};
 use health_core::Life;
@@ -60,7 +60,7 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
             return false;
         }
         check(c, ready, "health: the table and the host's body for the walker are there".into());
-        let p = ground_at(w, [ENGINEERING.centre[0] - 3.0, 1.6]);
+        let p = ground_at(w, [OPEN_GROUND[0] - 3.0, 1.6]);
         place_walker(w, p);
         end(w, c, "in front of the table".into());
         true
@@ -98,7 +98,7 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "health: off the plate, LMB held on the bandage");
-            let p = ground_at(w, [ENGINEERING.centre[0] - 3.0, 1.6]);
+            let p = ground_at(w, [OPEN_GROUND[0] - 3.0, 1.6]);
             place_walker(w, p);
             c.v.insert("n0", items(w).client.confirmed.count("bandage") as f64);
             lmb(w, true);
@@ -201,7 +201,7 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
             let (health, line) = (w.resource::<Vitals>().health, w.resource::<CrewHud>().vitals.iter().any(|l| l.kind == display_core::hud::VitalKind::Health));
             check(c, health == 0.0 && line, format!("health: unconscious: the HUD's health reads zero and stays on the HUD ({health:.2}, line {line})"));
             c.v.insert("frozen", c.t);
-            let p = ground_at(w, [ENGINEERING.centre[0] - 3.0, 1.6]);
+            let p = ground_at(w, [OPEN_GROUND[0] - 3.0, 1.6]);
             place_walker(w, p);
             return false;
         }

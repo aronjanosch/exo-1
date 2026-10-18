@@ -21,7 +21,6 @@ pub fn plugin(app: &mut App) {
         size: SIZE,
         turn_deg: 0.0,
         colour: [0.45, 0.36, 0.26],
-        panel: None,
     });
     app.add_systems(FixedUpdate, put_items.in_set(crate::phases::Fx::Effects));
 }

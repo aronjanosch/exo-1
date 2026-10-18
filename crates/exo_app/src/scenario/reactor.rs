@@ -2,8 +2,8 @@
 use super::*;
 use crate::dev_area::hull::alarms::ShipAlarm;
 use crate::dev_area::ship::{ReactorCounts, ReactorSim};
-use crate::dev_area::{layout::{junction_front, COOLANT_PUMP_AT, REACTOR_FRONT_AT}};
-use crate::dev_area::{engineering::{junction_boxes::JunctionRoom, panels::PUMP_ID, reactor_room::{MAIN_ID, MAIN_NAME}}};
+use crate::dev_area::{layout::{junction_front, REACTOR_FRONT_AT}};
+use crate::dev_area::{engineering::{junction_boxes::JunctionRoom, reactor_room::{MAIN_ID, MAIN_NAME}}};
 use crate::dev_area::DevArea;
 use super::{ship_frame_of, with_player};
 use super::dev_area::tap_until;
@@ -13,11 +13,11 @@ use crate::interact::Interaction;
 use crate::items::Items;
 use bevy::math::DVec3;
 use display_core::PanelId;
-use item_core::wire::{Alarm, ReactorAsk, ReactorFault};
+use item_core::wire::{Alarm, PumpMode, ReactorAsk, ReactorFault};
 use reactor_core::Group;
 
 fn display(w: &mut World, id: PanelId) -> DisplayPanel {
-    w.query_filtered::<&DisplayPanel, Without<crate::dev_area::layout::Mirror>>().iter(w).find(|d| d.id == id).cloned().unwrap_or_else(|| panic!("no display {id:?}"))
+    w.query::<&DisplayPanel>().iter(w).find(|d| d.id == id).cloned().unwrap_or_else(|| panic!("no display {id:?}"))
 }
 
 fn ground_at(w: &mut World, p: [f64; 2]) -> DVec3 {
@@ -51,6 +51,23 @@ fn dev_ask(a: ReactorAsk, wait: f64) -> Step {
             return false;
         }
         c.t >= wait
+    })
+}
+
+/// The pump's mode as an ask, checked once the host has taken it.
+fn pump_mode(name: &'static str, mode: PumpMode, on: bool) -> Step {
+    Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, name);
+            w.resource_mut::<Items>().ask_reactor(ReactorAsk::SetPumpMode(mode));
+            return false;
+        }
+        if sim(w).room.pump().on() != on && c.t < 3.0 {
+            return false;
+        }
+        check(c, sim(w).room.pump().on() == on, name.into());
+        end(w, c, format!("{mode:?}"));
+        true
     })
 }
 
@@ -260,8 +277,8 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    use_display(s, "COOLANT PUMP", PUMP_ID, [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 2.0]);
-    s.push(click_until(PUMP_ID, "pump_off", None, "reactor: the pump switched off climbs the heat", |w| !sim(w).room.pump().on()));
+    // The pump has no screen now: the mode goes in as the ask the old screen sent.
+    s.push(pump_mode("reactor: the pump switched off climbs the heat", PumpMode::Off, false));
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             c.v.insert("t0", heat_now(w).0);
@@ -276,7 +293,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         end(w, c, format!("{t0:.1} -> {t:.1}"));
         true
     }));
-    s.push(click_until(PUMP_ID, "pump_high", None, "reactor: the pump back on", |w| sim(w).room.pump().on()));
+    s.push(pump_mode("reactor: the pump back on", PumpMode::High, true));
 
 // The overheat above broke the old core, so a fresh room comes first.
     s.push(Box::new(|w, c| {

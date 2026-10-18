@@ -67,7 +67,6 @@ pub fn plugin(app: &mut App) {
         size: RACK_SIZE,
         turn_deg: 0.0,
         colour: [0.4, 0.42, 0.46],
-        panel: None,
     });
     app.add_systems(FixedUpdate, put_canisters.in_set(crate::phases::Fx::Effects));
 }

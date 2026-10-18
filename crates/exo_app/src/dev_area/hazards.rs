@@ -90,7 +90,6 @@ pub fn plugin(app: &mut App) {
             size: [z.half[0] * 2.0, 0.05, z.half[1] * 2.0],
             turn_deg: 0.0,
             colour,
-            panel: None,
         });
     }
     // Parked (#306 Parkplatz): the spicy canister is not put by the barrel; re-add this system to bring it back.

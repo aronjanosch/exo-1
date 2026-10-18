@@ -85,7 +85,7 @@ pub fn plugin(app: &mut App) {
     {
         let mut devices = app.world_mut().resource_mut::<DevAreaDevices>();
         for c in &cabs {
-            devices.add(PlaceholderBox { id: c.id.into(), zone: STORAGE, local_pos: [c.x, ROW_Y], size: c.size, turn_deg: 0.0, colour: c.colour, panel: None });
+            devices.add(PlaceholderBox { id: c.id.into(), zone: STORAGE, local_pos: [c.x, ROW_Y], size: c.size, turn_deg: 0.0, colour: c.colour });
         }
     }
     app.add_systems(FixedUpdate, put_cabinets.in_set(crate::phases::Fx::Effects));

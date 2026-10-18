@@ -132,12 +132,6 @@ pub fn progress_rgb(p: f64) -> [f32; 3] {
     [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]
 }
 
-pub const IMPELLER_DEG_PER_S: f64 = 240.0;
-
-pub fn impeller_angle(prev: f64, flow: f64, dt: f64) -> f64 {
-    (prev + IMPELLER_DEG_PER_S * flow.clamp(0.0, 1.0) * dt).rem_euclid(60.0)
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Steam,

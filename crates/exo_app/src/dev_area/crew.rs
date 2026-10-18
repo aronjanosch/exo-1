@@ -46,20 +46,10 @@ pub fn station_of(s: BotStation) -> Option<Station> {
     row_of(s).station()
 }
 
-/// The station whose screen a panel is. The reactor's station is its main screen and its pump.
+/// The station whose screen a panel is. The reactor's station is its main screen; the old gun, pump, junction box and helm
+/// screens are gone, so those stations have no screen to use (a bot still walks to them, `layout`).
 pub fn station_of_panel(id: &display_core::PanelId) -> Option<Station> {
-    use crate::dev_area::{turrets::panels::GUNNERY_ID, bridge::panels::HELM_ID, engineering::{panels::{JUNCTION_ID, PUMP_ID}, reactor_room::MAIN_ID}};
-    if *id == GUNNERY_ID {
-        Some(Station::Gunnery)
-    } else if *id == PUMP_ID || *id == MAIN_ID {
-        Some(Station::Reactor)
-    } else if *id == JUNCTION_ID {
-        Some(Station::Power)
-    } else if *id == HELM_ID {
-        Some(Station::Helm)
-    } else {
-        None
-    }
+    (*id == crate::dev_area::engineering::reactor_room::MAIN_ID).then_some(Station::Reactor)
 }
 
 fn breaker_of(g: Group) -> BreakerGroup {
@@ -223,9 +213,8 @@ mod tests {
     }
 
     #[test]
-    fn the_reactor_station_is_its_main_screen_and_its_pump() {
+    fn the_reactor_station_is_its_main_screen() {
         assert_eq!(station_of_panel(&crate::dev_area::engineering::reactor_room::MAIN_ID), Some(Station::Reactor));
-        assert_eq!(station_of_panel(&crate::dev_area::engineering::panels::PUMP_ID), Some(Station::Reactor));
         assert_eq!(station_of_panel(&display_core::PanelId::new("captain_console")), None);
     }
 

@@ -143,7 +143,7 @@ pub fn plugin(app: &mut App) {
     {
         let mut devices = app.world_mut().resource_mut::<DevAreaDevices>();
         for i in &items {
-            devices.add(PlaceholderBox { id: i.id.clone(), zone: i.zone, local_pos: i.local_pos, size: i.size, turn_deg: i.turn_deg, colour: i.colour, panel: None });
+            devices.add(PlaceholderBox { id: i.id.clone(), zone: i.zone, local_pos: i.local_pos, size: i.size, turn_deg: i.turn_deg, colour: i.colour });
         }
     }
     app.add_systems(FixedUpdate, (put_stock, fill_canisters).in_set(crate::phases::Fx::Effects));

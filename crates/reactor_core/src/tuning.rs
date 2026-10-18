@@ -139,7 +139,6 @@ impl Tuning {
         need(self.weapons.overheat_at > 0.0 && (0.0..self.weapons.overheat_at).contains(&self.weapons.unlock_at), "weapons.unlock_at", "unlock_at must be below overheat_at (> 0)");
         need((0.0..=1.0).contains(&self.weapons.jam_chance) && self.weapons.jam_required_skill > 0.0, "weapons.jam_chance", "jam_chance must be 0..1, jam_required_skill > 0");
         need(self.weapons.clear_jam_s > 0.0, "weapons.clear_jam_s", "must be > 0");
-        need(self.startup.boot_s >= 0.0, "startup", "boot_s >= 0");
         need(self.jump.prep_s >= 0.0 && self.jump.charge_s > 0.0 && self.jump.active_s > 0.0, "jump", "prep_s >= 0, charge_s > 0, active_s > 0");
         need(self.room.aux_output_kw >= 0.0, "room.aux_output_kw", "must be >= 0");
         need(self.life_support.oxygen_generator_rate >= 0.0, "life_support.oxygen_generator_rate", "must be >= 0");

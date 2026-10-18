@@ -1,12 +1,12 @@
-//! Antimatter canisters by hand: load and brake pull (the plain canister; the hot and spicy canisters are parked, #306 Parkplatz).
+//! Antimatter canisters by hand: F at a reactor slot loads and pulls (the brake; the plain canister, the hot and spicy canisters are parked, #306 Parkplatz).
+//! The slot parts themselves are covered in `scenario_reactor_room`; this one keeps the rules around them: the rack, the hand's burn and the life.
 use super::*;
-use crate::controls::Controls;
-use crate::dev_area::engineering::coolant::HOLD_S;
-use crate::dev_area::{layout::{REACTOR_AIM_LIFT, REACTOR_AT, REACTOR_FRONT_AT, ROOM}};
+use crate::dev_area::layout::ROOM;
 use crate::dev_area::ship::ReactorSim;
 use crate::dev_area::engineering::canisters::RACK_AT;
 use crate::dev_area::DevArea;
-use super::items::{collect, items, look_at, outside};
+use super::items::{collect, items, outside};
+use super::reactor_room::{aim, press, stand_at};
 use crate::health::HealthState;
 use crate::items::{Items, LOCAL};
 use bevy::math::DVec3;
@@ -25,8 +25,9 @@ fn available(w: &World) -> f64 {
     w.resource::<ReactorSim>().room.reactor().available_fill()
 }
 
-fn longest_life(w: &World) -> f64 {
-    w.resource::<ReactorSim>().room.reactor().canisters().iter().map(|r| r.life).fold(0.0, f64::max)
+/// The life of the canister in reactor slot `slot` (0 when the slot is empty).
+fn slot_life(w: &World, slot: usize) -> f64 {
+    w.resource::<ReactorSim>().room.reactor().canisters().iter().find(|r| r.slot == slot).map_or(0.0, |r| r.life)
 }
 
 fn heat(w: &World) -> f64 {
@@ -108,40 +109,21 @@ pub(super) fn canisters_steps(s: &mut Vec<Step>) {
     }));
     s.push(select("canisters: the canister is selected", Some("antimatter_canister")));
 
-    s.push(run("canisters: the walker stands at the reactor", 3.0, |w, c| {
+    // The feed bay is on the model's +X flank; F loads the slot looked at. The two slots start full: take one out so there is room.
+    s.push(run("canisters: the walker goes to the feed bay", 3.0, |w, c| {
         if c.t == 0.0 {
-            let feet = ground(w, REACTOR_FRONT_AT, 0.0);
-            place_walker(w, feet);
+            w.resource_mut::<ReactorSim>().room.reactor_mut().remove_canister(0);
+            c.v.insert("n0", canisters_in_reactor(w) as f64);
+            stand_at(w, [2.4, 0.0, 0.0]);
         }
-        let target = ground(w, REACTOR_AT, REACTOR_AIM_LIFT);
-        look_at(w, target);
-        if c.t < 0.5 {
-            return None;
-        }
-        Some("at the reactor".into())
+        aim(w, "slot_1");
+        (c.t >= 0.5).then(|| "at the bay".into())
     }));
-    s.push(run("canisters: LMB held on the reactor loads the canister", HOLD_S + 4.0, {
-        move |w, c| {
-            if c.t == 0.0 {
-                // The two slots start full: take one out so there is room to load.
-                w.resource_mut::<ReactorSim>().room.reactor_mut().remove_canister(0);
-                c.v.insert("n0", canisters_in_reactor(w) as f64);
-                let target = ground(w, REACTOR_AT, REACTOR_AIM_LIFT);
-                look_at(w, target);
-                w.resource_mut::<Controls>().primary_held = true;
-                return None;
-            }
-            let target = ground(w, REACTOR_AT, REACTOR_AIM_LIFT);
-            look_at(w, target);
-            if c.t < HOLD_S + 1.0 {
-                return None;
-            }
-            w.resource_mut::<Controls>().primary_held = false;
-            let n = canisters_in_reactor(w);
-            check(c, n == c.v["n0"] as usize + 1, format!("canisters: the reactor has one canister more ({} -> {n})", c.v["n0"]));
-            check(c, items(w).client.view.count("antimatter_canister") == 0, "canisters: the canister is gone from the bar".into());
-            Some(format!("{n} canisters"))
-        }
+    s.push(press("canisters: F on the free slot loads the canister", "slot_1", 0.8, |w, c| {
+        let n = canisters_in_reactor(w);
+        check(c, n == c.v["n0"] as usize + 1, format!("canisters: the reactor has one canister more ({} -> {n})", c.v["n0"]));
+        check(c, items(w).client.view.count("antimatter_canister") == 0, "canisters: the canister is gone from the bar".into());
+        format!("{n} canisters")
     }));
 
     s.push(run("canisters: the dev drain heats the core", 2.0, |w, c| {
@@ -162,39 +144,22 @@ pub(super) fn canisters_steps(s: &mut Vec<Step>) {
         Some(format!("{:.1} degrees", heat(w)))
     }));
     s.push(select("canisters: the hands are empty", None));
-    s.push(run("canisters: the walker stands at the reactor with empty hands", 3.0, |w, c| {
-        if c.t == 0.0 {
-            let feet = ground(w, REACTOR_FRONT_AT, 0.0);
-            place_walker(w, feet);
-        }
-        let target = ground(w, REACTOR_AT, REACTOR_AIM_LIFT);
-        look_at(w, target);
-        if c.t < 0.5 {
-            return None;
-        }
-        Some("at the reactor".into())
-    }));
-    s.push(run("canisters: LMB held on the reactor pulls the canister with the most life", HOLD_S + 4.0, |w, c| {
+    s.push(run("canisters: the walker goes back to the feed bay with empty hands", 3.0, |w, c| {
         if c.t == 0.0 {
             c.v.insert("p0", canisters_in_reactor(w) as f64);
             c.v.insert("fill0", available(w));
-            c.v.insert("life0", longest_life(w));
+            c.v.insert("life0", slot_life(w, 0));
             c.v.insert("burn0", burn(w));
-            let target = ground(w, REACTOR_AT, REACTOR_AIM_LIFT);
-            look_at(w, target);
-            w.resource_mut::<Controls>().primary_held = true;
-            return None;
+            stand_at(w, [2.4, 0.0, 0.0]);
         }
-        let target = ground(w, REACTOR_AT, REACTOR_AIM_LIFT);
-        look_at(w, target);
-        if c.t < HOLD_S + 1.0 {
-            return None;
-        }
-        w.resource_mut::<Controls>().primary_held = false;
+        aim(w, "slot_1");
+        (c.t >= 0.5).then(|| "at the bay".into())
+    }));
+    s.push(press("canisters: F with empty hands on slot 1 pulls that slot's canister", "slot_1", 0.8, |w, c| {
         let n = canisters_in_reactor(w);
         check(c, n + 1 == c.v["p0"] as usize, format!("canisters: one canister less in the reactor ({} -> {n})", c.v["p0"]));
         check(c, items(w).client.view.count("antimatter_canister") == 1, "canisters: the pulled canister is in the hand".into());
-        Some(format!("{n} canisters"))
+        format!("{n} canisters")
     }));
     s.push(run("canisters: the pulled canister keeps its life and the hand burns", 3.0, |w, c| {
         if c.t < 0.5 {
@@ -202,8 +167,8 @@ pub(super) fn canisters_steps(s: &mut Vec<Step>) {
         }
         let slot = (0..8).find(|&i| items(w).client.view.slot(i).is_some_and(|s| s.item.kind.as_str() == "antimatter_canister")).unwrap_or(0);
         let life = items(w).client.view.slot(slot).and_then(|s| s.item.condition).unwrap_or(-1.0);
-        // The most life there was when the hold began (the canisters burn a little meanwhile).
-        check(c, (life - c.v["life0"]).abs() < 2.0, format!("canisters: the pulled canister keeps its life ({life:.1}, the most there was {:.1})", c.v["life0"]));
+        // The life it had in the slot when the pull began (the canisters burn a little meanwhile).
+        check(c, (life - c.v["life0"]).abs() < 2.0, format!("canisters: the pulled canister keeps its life ({life:.1}, it had {:.1})", c.v["life0"]));
         check(c, burn(w) > c.v["burn0"], format!("canisters: the hand burns once ({:.1})", burn(w)));
         check(c, available(w) < c.v["fill0"], format!("canisters: the available fill falls ({:.0} -> {:.0})", c.v["fill0"], available(w)));
         Some(format!("life {life:.0}"))

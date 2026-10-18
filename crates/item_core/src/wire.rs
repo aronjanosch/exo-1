@@ -21,9 +21,8 @@ pub enum ToHost {
     Rescue(Option<PlayerId>),
     /// The coolant refill hold: the player is refilling at the pump (`true`), or has stopped (`false`).
     Refill(bool),
-    /// The brake: pull a canister into the sender's hands. `None`: the one with the most life (the LMB hold);
-    /// `Some(i)`: the canister of reactor slot `i` (F at a slot, #316), refused when that slot is empty.
-    Pull(Option<u8>),
+    /// The brake: pull the canister of reactor slot `i` into the sender's hands (F at a slot, #316), refused when that slot is empty.
+    Pull(u8),
     /// The station whose screen the sender's active display shows (r43, the bots' occupancy), or `None`
     /// when it shows no station's. Sent when the display changes.
     Using(Option<BotStation>),
@@ -153,10 +152,6 @@ pub enum ReactorAsk {
     SetPumpMode(PumpMode),
     /// The heat boost: up (true) or down (false), as the core takes it.
     Boost(bool),
-    /// First press of the core eject: the safety cover opens for `eject_arm_s` (the host's timer).
-    ArmEject,
-    /// Second press, inside the arm window: the core is thrown out (PULSAR's core eject).
-    Eject,
     /// F on a part of the reactor that is not an item slot (#316): the index into `reactor_room::PRESS` (the SCRAM cover and
     /// button, the eject cover and lever). The host runs it on the part's controls; the guard (cover) answers there.
     Press(u8),
@@ -201,38 +196,11 @@ pub enum ReactorAsk {
     /// GN-01's CLEAR JAM hold (r41): `true` while the player holds at the gun, `false` when they let go.
     /// The host counts the hold (`Weapons::clear_jam`) and clears the jam after its time.
     ClearJam(bool),
-    /// SP-01's MAIN BREAKER (r42, #268, startup step 1): on starts the startup, off cuts the ship cold.
-    MasterBreaker(bool),
-    /// SP-01's BOOT (r42, step 2): the OS boots for `boot_s`. Refused unless the breaker is on.
-    Boot,
-    /// SP-01's OVERRIDE (r42, step 6): READY, when the steps before it hold. Refused otherwise.
-    Override,
     /// The captain's priority list on CP-01 (r42, #253): the station's bot level, 0 Ignore .. 4 Max.
     /// The host clamps it.
     SetBotPriority(BotStation, u8),
     /// The dev BOTS setting (r42): how many bots man the empty stations, 0..3; the host clamps it.
     SetBots(u8),
-}
-
-/// The ship's startup stage as the host has it (r42, `reactor_core::startup::Stage`): the steps done,
-/// in order. Ready is the default: a ship that is up, the warm start.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum StartupStage {
-    Cold,
-    Breaker,
-    Booting,
-    Reactor,
-    Jump,
-    Breakers,
-    #[default]
-    Ready,
-}
-
-impl StartupStage {
-    /// The master is live: the grid delivers and the screens other than SP-01 show.
-    pub fn live(self) -> bool {
-        self >= StartupStage::Reactor
-    }
 }
 
 /// The reactor's start-up stage as the host has it (#319, `reactor_core::startup::StartStage`). Cold is the dark cold start;
@@ -417,8 +385,6 @@ pub enum ReactorFault {
     HitHeavy,
     /// The dev fault JUMP FULL (r40, #252): the jump drive's charge is full and it is READY.
     JumpFull,
-    /// The dev button COLD SHIP (r42): the whole ship back to the cold state (`EngineRoom::cold_ship`).
-    ColdShip,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -596,7 +562,6 @@ pub struct ReactorNews {
     pub graph_output: [u16; GRAPH_POINTS],
     pub graph_load: [u16; GRAPH_POINTS],
     pub ejected: bool,
-    pub eject_armed: bool,
     /// The core ejects the host has applied so far (`ReactorCounts::ejects`). A process that sees
     /// it go up shows the CORE EJECTED notice once, as the blasts do.
     pub ejects: u32,
@@ -666,11 +631,6 @@ pub struct ReactorNews {
     pub weapon_jammed: bool,
     /// The gun is locked by heat until it cools below `unlock_at` (r41, the OVERHEAT word).
     pub weapon_overheated: bool,
-    /// The ship's cold start (r42, #268): the stage SP-01 shows. Ready is the default (the warm
-    /// start); every other screen is OFF before `StartupStage::live`.
-    pub startup: StartupStage,
-    /// The checklist's six ticks, steps 1 to 6 (`reactor_core::startup::Startup::ticks`).
-    pub startup_ticks: [bool; 6],
     /// The bots' rows, by `BotStation::index` (r42, #253): a station a bot runs shows its BOT tag; a work row a bot is at shows it too (r44).
     pub bots: [BotNews; BOT_ROWS],
     /// The dev BOTS setting: how many bots there are, 0..3 (r42).
@@ -891,8 +851,6 @@ mod tests {
             director: true,
             jump_stage: JumpStage::Paused,
             jump_charge: 0.4,
-            startup: StartupStage::Breakers,
-            startup_ticks: [true, true, true, true, false, false],
             jumps: 1,
             airlock: AirlockNews { inner_open: false, outer_open: false, inside: false, cycling: AirlockCycle::Inner, progress: 0.4 },
             vacuum: true,
@@ -947,7 +905,6 @@ mod tests {
             throttle: -35.5,
             engine_thrust: 62.5,
             ejected: true,
-            eject_armed: true,
             ejects: 3,
             scram_cover: true,
             eject_cover: true,
@@ -1004,8 +961,6 @@ mod tests {
             ReactorAsk::SetVent(1, true),
             ReactorAsk::SetThrottle(-100.0),
             ReactorAsk::SetPumpMode(PumpMode::Low),
-            ReactorAsk::ArmEject,
-            ReactorAsk::Eject,
             ReactorAsk::Press(3),
             ReactorAsk::SetDirector(true),
             ReactorAsk::SetDirector(false),
@@ -1023,13 +978,8 @@ mod tests {
             ReactorAsk::Ambush(false),
             ReactorAsk::Airlock(AirlockAsk::ToggleInner),
             ReactorAsk::SealAirlock,
-            ReactorAsk::MasterBreaker(true),
-            ReactorAsk::MasterBreaker(false),
-            ReactorAsk::Boot,
-            ReactorAsk::Override,
-            ReactorAsk::Trigger(ReactorFault::ColdShip),
         ];
-        for pull in [None, Some(0u8), Some(1)] {
+        for pull in [0u8, 1] {
             assert_eq!(decode::<ToHost>(&encode(&ToHost::Pull(pull))), Some(ToHost::Pull(pull)));
         }
         let load = crate::Request::Load { slot: 2, into: 1 };

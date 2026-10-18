@@ -101,7 +101,7 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
 pub fn airlock_panel(r: Option<&ReactorNews>) -> Panel {
     use display_core::airlock_panel::{panel, Face};
     let a = r.map(|r| r.airlock).unwrap_or_default();
-    let live = r.map_or(true, |r| r.startup.live());
+    let live = r.map_or(true, |r| r.start != item_core::wire::StartStage::Cold);
     panel(if !live {
         Face::Unpowered
     } else if a.cycling == AirlockCycle::Idle {
@@ -169,7 +169,6 @@ mod tests {
     fn the_airlock_panels_have_one_push_and_follow_the_news() {
         use item_core::wire::AirlockNews;
         let mut r = ReactorNews::default();
-        r.startup = item_core::wire::StartupStage::Reactor;
         for (cycling, inside) in [(AirlockCycle::Idle, true), (AirlockCycle::Idle, false), (AirlockCycle::Outer, true)] {
             r.airlock = AirlockNews { cycling, inside, progress: 0.5, ..Default::default() };
             let p = airlock_panel(Some(&r));

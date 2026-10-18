@@ -93,9 +93,10 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 | `airlock` | The airlock (#309): PUSH on the chamber's panel runs the cycle in (outer door shuts, air fills, inner door opens) and out; every tick the doors are never open together, none is open during a cycle, and the cycles make no air. |
 | `equipment` | The equipment room (#311): take a suit from its locker, put it on in the worn place, swap its air canister for a full one from a canister box (the old one fills there with power), cycle out through the airlock on the suit's air, an empty canister gives no air, back in, take the suit off and store it; nothing lost or duplicated on the way. |
 | `ship_ambush` | The ambush: AMBUSH on, the enemy's shots on shield and hull, GN-01 fires to DESTROYED (or JD-01 jumps out); every tick the airlock doors, shield and hull ranges and NaN. |
-| `reactor` | The reactor on the engine room's screens: temperature band, manual mode, load from the grid. |
+| `reactor` | The reactor in the engine room: temperature band, faults, the junction toggles' load, manual mode and the injection slider on the reactor's main screen, the pump, the core eject by cover and lever. |
+| `reactor_room` | The reactor model's parts (#316 to #319): SCRAM and eject covers, the canister slots by F, the start-up stand (toggles, START lever, prime lamps) from cold and after a SCRAM, the main and supply screens. |
 | `coolant` | The pump's coolant tank: the drain, the refill by hand and E-COOL. |
-| `canisters` | Antimatter canisters by hand: loading, brake pull, and the spicy canister's radiation. |
+| `canisters` | Antimatter canisters by hand: from the rack, F at a reactor slot loads, the brake pull at a hot core burns the hand and keeps the canister's life. |
 | `blast` | The implosion blast reaches a walker two metres off and not one at 25 m. |
 | `fire` | Fires in the engine room, sprayed out with the extinguisher. |
 | `fire_grid` | The cell model of the engine-room fire, switched on (fire model Grid), catches the corridor. |

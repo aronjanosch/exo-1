@@ -6,9 +6,9 @@ use display_core::{canvas, Ink, Item, Panel, Shape, Tier, TextFace, Tone};
 use item_core::wire::ReactorNews;
 
 
-/// Sets a panel; while the ship's master is off (the cold start, r42), every screen but SP-01 shows OFF.
+/// Sets a panel; while the ship's master is off (the reactor's cold start, #319), the screen shows OFF.
 pub fn show(panels: &mut Panels, r: Option<&ReactorNews>, id: display_core::PanelId, p: Panel) {
-    let live = r.map_or(true, |r| r.startup.live() && r.start != item_core::wire::StartStage::Cold);
+    let live = r.map_or(true, |r| r.start != item_core::wire::StartStage::Cold);
     panels.set(id, if live { p } else { off(p) });
 }
 
@@ -75,7 +75,7 @@ pub fn oxygen_tone(o: f64) -> Tone {
 }
 
 /// The master is off (r42, #268): the screen goes dark under its plate, its status says OFF. Every
-/// screen but SP-01 goes through this in `write_panels`.
+/// screen goes through this in `write_panels`.
 pub fn off(p: Panel) -> Panel {
     let (w, h) = (p.size.x - 40.0, p.size.y - 80.0);
     let shapes = vec![Shape::Rect { x: 0.0, y: 0.0, w, h, fill: Some(Ink::Bg0), outline: None }, text(0.0, h * 0.5 - 10.0, w, 20.0, "OFF", 22.0, TextFace::DisplayBold, Ink::Fg3, true)];

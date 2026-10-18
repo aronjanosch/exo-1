@@ -81,7 +81,7 @@ pub enum NetOut {
     /// Client to host: the coolant refill hold is running (true) or has stopped (false).
     Refill(bool),
     /// Client to host: the brake on the reactor (the slot to pull from, None: the most life); the host knows the sender.
-    Pull(Option<u8>),
+    Pull(u8),
     RepairRefused { to: PlayerId },
     /// Client to host: the station the active display shows, or none (r43, the bots' occupancy).
     Using(Option<BotStation>),
@@ -124,7 +124,7 @@ pub struct Items {
     /// Treatment holds by player, to apply here (host and one process); a client sends its own.
     pub treat_asks: Vec<(PlayerId, Option<PlayerId>)>,
     /// Brakes by player, to apply here; a client sends its own. The canister goes to that player.
-    pub pull_asks: Vec<(PlayerId, Option<u8>)>,
+    pub pull_asks: Vec<(PlayerId, u8)>,
     pub rescue_asks: Vec<(PlayerId, Option<PlayerId>)>,
     /// Host: the coolant refill holds (the player, running or not), for the public status.
     pub refill_asks: Vec<(PlayerId, bool)>,
@@ -215,12 +215,8 @@ impl Items {
         }
     }
 
-    pub fn ask_pull(&mut self) {
-        self.ask_pull_from(None);
-    }
-
-    /// The brake on reactor slot `slot` (F at the slot, #316), or on the canister with the most life (None).
-    pub fn ask_pull_from(&mut self, slot: Option<u8>) {
+    /// The brake on reactor slot `slot` (F at the slot, #316).
+    pub fn ask_pull_from(&mut self, slot: u8) {
         if self.role == Role::Client {
             self.net_out.push(NetOut::Pull(slot));
         } else {
@@ -1234,12 +1230,12 @@ mod tests {
         // remote one's slot from its connection, `items_net`), so the canister goes to the one who asked.
         let mut host = Items::load();
         host.role = Role::Host;
-        host.ask_pull();
-        assert_eq!(host.pull_asks, vec![(host.me(), None)]);
+        host.ask_pull_from(1);
+        assert_eq!(host.pull_asks, vec![(host.me(), 1)]);
         let mut client = Items::load();
         client.role = Role::Client;
-        client.ask_pull();
+        client.ask_pull_from(1);
         assert!(client.pull_asks.is_empty(), "a client sends it, it does not apply it");
-        assert!(client.net_out.iter().any(|n| matches!(n, NetOut::Pull(None))));
+        assert!(client.net_out.iter().any(|n| matches!(n, NetOut::Pull(1))));
     }
 }

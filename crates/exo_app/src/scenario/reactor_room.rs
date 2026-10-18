@@ -31,13 +31,13 @@ fn seated(w: &mut World, name: &str) -> bool {
 }
 
 /// Puts the walker's feet at a spot of the model's floor (model metres, glTF axes).
-fn stand_at(w: &mut World, model: [f64; 3]) {
+pub(super) fn stand_at(w: &mut World, model: [f64; 3]) {
     let mut q = w.query::<&ReactorRoom>();
     let feet = q.single(w).expect("the reactor room is there").world(model);
     place_walker(w, feet);
 }
 
-fn aim(w: &mut World, name: &str) {
+pub(super) fn aim(w: &mut World, name: &str) {
     let at = part_at(w, name);
     look_at(w, at);
 }
@@ -103,7 +103,7 @@ fn run(name: &'static str, limit: f64, mut body: impl FnMut(&mut World, &mut Ctx
 }
 
 /// Aims at the part, taps F once at the start and lets `after` s pass before `done` reads the result.
-fn press(name: &'static str, part: &'static str, after: f64, mut done: impl FnMut(&mut World, &mut Ctx) -> String + Send + Sync + 'static) -> Step {
+pub(super) fn press(name: &'static str, part: &'static str, after: f64, mut done: impl FnMut(&mut World, &mut Ctx) -> String + Send + Sync + 'static) -> Step {
     run(name, after + 3.0, move |w, c| {
         aim(w, part);
         if c.t == 0.0 {

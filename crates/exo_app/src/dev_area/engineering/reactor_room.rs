@@ -5,7 +5,7 @@
 //! - SCRAM: `cover_scram` guards `button_scram`. F on the button with the cover open vents the chamber
 //!   (`reactor_core::Reactor::scram`: injection gone at once, a share of the fill lost).
 //! - Core eject: `cover_eject` guards `lever_eject`. The lever with the cover open throws the core out
-//!   (this replaces the old screen's ARM step: the cover is the arm). The old screen's ARM and EJECT still work (#321 removes them).
+//!   (this replaces the old screen's ARM step: the cover is the arm).
 //! - `slot_1`, `slot_2`: the two canister slots. They show the canisters the reactor holds (`ReactorNews::canisters`);
 //!   F with a canister in hand loads it into the slot looked at (`Request::Load`), F with empty hands takes that slot's one out
 //!   (the brake, `ToHost::Pull(Some(slot))`). A taken slot refuses a load, an empty one a pull.
@@ -270,7 +270,6 @@ pub(super) fn react(mut sounds: MessageReader<PartSound>, mut machines: Query<&m
                 None => info!("reactor: SCRAM refused (no core)"),
             },
             (LEVER_EJECT, Outcome::Lever { index: 1 }) => {
-                sim.eject_left = None;
                 for e in sim.room.eject_core() {
                     route(e, &mut counts);
                 }
@@ -400,7 +399,7 @@ pub fn press(i: usize, items: &mut Items, now: f64) {
             let bar = items.client.view.selected;
             let _ = items.request(now, item_core::Request::Load { slot: bar, into: slot as u8 });
         }
-        SlotAction::Pull => items.ask_pull_from(Some(slot as u8)),
+        SlotAction::Pull => items.ask_pull_from(slot as u8),
         SlotAction::Refuse(_) => {}
     }
 }

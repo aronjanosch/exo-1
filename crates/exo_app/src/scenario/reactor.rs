@@ -2,11 +2,12 @@
 use super::*;
 use crate::dev_area::hull::alarms::ShipAlarm;
 use crate::dev_area::ship::{ReactorCounts, ReactorSim};
-use crate::dev_area::{layout::{junction_front, COOLANT_PUMP_AT}};
-use crate::dev_area::{engineering::{junction_boxes::JunctionRoom, panels::{PUMP_ID, READOUT_ID, STATUS_ID}}};
+use crate::dev_area::{layout::{junction_front, COOLANT_PUMP_AT, REACTOR_FRONT_AT}};
+use crate::dev_area::{engineering::{junction_boxes::JunctionRoom, panels::PUMP_ID, reactor_room::{MAIN_ID, MAIN_NAME}}};
 use crate::dev_area::DevArea;
 use super::{ship_frame_of, with_player};
 use super::dev_area::tap_until;
+use super::reactor_room::{press, stand_at};
 use crate::displays::{aim_at, world_point_of, ActiveDisplay, DisplayPanel};
 use crate::interact::Interaction;
 use crate::items::Items;
@@ -244,9 +245,11 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
     s.push(toggle_until(0, 0, "reactor: the ENGINES toggle on takes its demand onto the load", |w| sim(w).room.grid().breaker(Group::Engines)));
     s.push(load_step("reactor: ENGINES on: the load is the grid's demand (engines 800 kW at full work, wandering)"));
 
-    use_display(s, "REACTOR", READOUT_ID, [-11.8, -17.7]);
-    s.push(click_until(READOUT_ID, "mode", None, "reactor: the operator switches to MAN from the readout", |w| sim(w).manual));
-    s.push(click_until(READOUT_ID, "inj_set", Some(0.3), "reactor: injection set to 30 % on the slider brings the heat back", |w| (sim(w).injection - 30.0).abs() < 1.0));
+    // The operator switches to MANUAL on the reactor's main screen and sets the injection with the slider. (POWER off and on, which
+    // the old readout had, are the start stand's OFF lever and a restart now: `scenario_reactor_room`.)
+    use_display(s, MAIN_NAME, MAIN_ID, REACTOR_FRONT_AT);
+    s.push(click_until(MAIN_ID, display_core::reactor_main::MANUAL, None, "reactor: the operator switches to MAN on the main screen", |w| sim(w).manual));
+    s.push(click_until(MAIN_ID, display_core::reactor_main::INJECTION, Some(0.3), "reactor: injection set to 30 % on the slider brings the heat back", |w| (sim(w).injection - 30.0).abs() < 1.0));
     s.push(Box::new(|w, c| {
         if c.t < 15.0 {
             return false;
@@ -254,34 +257,6 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         let (t, _) = heat_now(w);
         check(c, sim(w).manual && counts(w).implosions == 0, "reactor: on MAN, no implosion".into());
         end(w, c, format!("{t:.1}"));
-        true
-    }));
-
-    s.push(click_until(READOUT_ID, "power", None, "reactor: POWER off at the readout cuts the output and the power", |w| !sim(w).room.reactor().power_on()));
-    s.push(Box::new(|w, c| {
-        // Injection follows its target with the lag (4 s): it is near 0 after about 15 s, not at once.
-        if c.t < 15.0 {
-            return false;
-        }
-        let r = sim(w).room.reactor();
-        let (power, output, injection) = (r.power_on(), r.output_kw(), r.injection());
-        let powered = w.resource::<Items>().reactor.is_some_and(|n| n.powered);
-        check(c, !power && output == 0.0 && injection < 1.0, format!("reactor: POWER off: power {power}, output {output:.1}, injection {injection:.1}"));
-        check(c, !powered, "reactor: the machines have no power after POWER off".into());
-        end(w, c, "powered off".into());
-        true
-    }));
-
-    s.push(click_until(READOUT_ID, "power", None, "reactor: POWER on at the readout brings the reactor back", |w| sim(w).room.reactor().power_on()));
-    s.push(Box::new(|w, c| {
-        if c.t < 30.0 {
-            return false;
-        }
-        let r = sim(w).room.reactor();
-        let (power, output) = (r.power_on(), r.output_kw());
-        let powered = w.resource::<Items>().reactor.is_some_and(|n| n.powered);
-        check(c, power && powered, format!("reactor: back on: power {power}, output {output:.1}, powered {powered}"));
-        end(w, c, format!("{output:.0} kW"));
         true
     }));
 
@@ -302,9 +277,6 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         true
     }));
     s.push(click_until(PUMP_ID, "pump_high", None, "reactor: the pump back on", |w| sim(w).room.pump().on()));
-
-    use_display(s, "RX STATUS", STATUS_ID, [-9.6, -17.6]);
-    s.push(click_until(STATUS_ID, "boost_up", None, "reactor: BOOST UP on the status screen raises the boost", |w| sim(w).room.reactor().heat_boost() > 20.0));
 
 // The overheat above broke the old core, so a fresh room comes first.
     s.push(Box::new(|w, c| {
@@ -329,35 +301,24 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         end(w, c, "fresh core".into());
         true
     }));
-    // One step for both presses: the button is ARM EJECT while the cover is shut and EJECT while it is
-    // open, so each retry (half a second) clicks what the snapshot shows. The window is 5 s.
+    // The cover is the arm: F on the lever opens the cover, F again throws the core out (`engineering::reactor_room`).
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
-            begin(w, c, "reactor: ARM EJECT, then EJECT inside the window, on the status screen");
+            begin(w, c, "reactor: the walker goes to the console");
+        }
+        if active(w).using().is_some() {
+            if c.t == 0.0 {
+                tap(w, KeyCode::KeyF);
+            }
             return false;
         }
-        if sim(w).room.reactor().ejected() {
-            end(w, c, "ejected".into());
-            return true;
-        }
-        if c.t > 20.0 {
-            check(c, false, "reactor: the core was not ejected within 20 s".into());
-            end(w, c, "timed out".into());
-            return true;
-        }
-        let last = c.v.get("last").copied().unwrap_or(-1.0);
-        if last >= 0.0 && c.t < last + 0.5 {
-            return false;
-        }
-        let armed = w.resource::<Items>().reactor.is_some_and(|n| n.eject_armed);
-        let action = if armed { "eject" } else { "arm_eject" };
-        let d = display(w, STATUS_ID);
-        if let Some(at) = world_point_of(w, &d, action, None) {
-            aim_at(w, at);
-            w.resource_mut::<Controls>().click = true;
-            c.v.insert("last", c.t);
-        }
-        false
+        stand_at(w, [0.0, 0.0, 2.6]);
+        true
+    }));
+    s.push(press("reactor: F on the eject lever opens the cover", "lever_eject", 0.5, |_, _| "cover open".into()));
+    s.push(press("reactor: F on the eject lever throws the core out", "lever_eject", 0.6, |w, c| {
+        check(c, sim(w).room.reactor().ejected(), "reactor: the core was ejected".into());
+        "ejected".into()
     }));
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {

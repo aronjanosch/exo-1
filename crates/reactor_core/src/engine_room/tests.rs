@@ -104,15 +104,6 @@ fn the_save_carries_three_boxes_and_reads_the_old_one() {
     assert_eq!(back.junction(1).condition().value(), 100.0);
 }
 
-/// #322: the startup's breakers check reads the toggles on JB-2 (Life Support, Lights).
-#[test]
-fn the_startup_breakers_check_reads_the_toggles() {
-    let mut r = room();
-    assert!(r.startup_checks().breakers_on);
-    r.grid_mut().set_breaker(Group::Lights, false);
-    assert!(!r.startup_checks().breakers_on);
-}
-
 #[test]
 fn surge_breaks_a_weak_junction_box_with_an_event() {
     let tuning = RoomTuning { surge_damage: 100.0, ..RoomTuning::default() };

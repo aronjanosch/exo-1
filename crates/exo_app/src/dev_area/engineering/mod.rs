@@ -15,7 +15,6 @@ pub mod canister_hum;
 pub mod junction_boxes;
 pub mod reactor_room;
 pub mod start_stand;
-pub mod startup_screen;
 
 pub fn plugin(app: &mut App) {
     app.add_plugins((junction_boxes::plugin, canister_hum::plugin));

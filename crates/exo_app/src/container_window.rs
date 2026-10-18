@@ -735,7 +735,7 @@ fn draw_window(
     let suit_stack = items.client.view.worn.as_ref();
     let is_suit = suit_stack.is_some();
     // The canister boxes work with the ship's power (the same notion as the airlock's panel).
-    let powered = items.reactor.is_none_or(|r| r.startup.live());
+    let powered = items.reactor.is_none_or(|r| r.start != item_core::wire::StartStage::Cold);
     let is_box = container.is_some_and(|(r, _)| crate::dev_area::equipment::is_box(r));
     let code_of = |s: &item_core::container::Stack| items.defs.of(s).map(|d| d.short_code()).unwrap_or_default();
     let stack_at = |p: Place| match p {

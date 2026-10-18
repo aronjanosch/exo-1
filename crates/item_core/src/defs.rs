@@ -53,6 +53,10 @@ pub struct ItemDef {
     /// Wears: its condition (0..100 %) starts at 100 and what it does can run it down.
     #[serde(default)]
     pub condition: bool,
+    /// A model under the asset root (`ship/canister_antimatter.glb`) drawn in place of the placeholder box, loose and in the
+    /// hand. Its origin is the end of the item and its long axis is +Y; the box (`shape`) stays the body and the hold.
+    #[serde(default)]
+    pub model: Option<String>,
     pub shape: Shape,
 }
 

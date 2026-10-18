@@ -372,8 +372,8 @@ pub struct Env {
     /// The fire's burn rate on the body, per second (0 when no fire touches it).
     pub fire: f64,
     /// Radiation per second from a radioactive item the body carries or stands next to (the
-    /// spicy rod). Added per tick like the glow: `rate * tick_s` each tick.
-    pub rod_per_s: f64,
+    /// spicy canister). Added per tick like the glow: `rate * tick_s` each tick.
+    pub spicy_per_s: f64,
     /// The body is in vacuum (the room's pressure is near 0, `vacuum::in_vacuum`). Not the air it
     /// breathes: a body in a mask in vacuum is still in vacuum.
     pub vacuum: bool,
@@ -611,8 +611,8 @@ impl Health {
         if env.glow {
             self.change(t, "radiation", t.radiation.glow_per_tick);
         }
-        if env.rod_per_s > 0.0 {
-            self.change(t, "radiation", env.rod_per_s * t.tick_s);
+        if env.spicy_per_s > 0.0 {
+            self.change(t, "radiation", env.spicy_per_s * t.tick_s);
         }
         let from_radiation = t.radiation.burn_for(self.strength("radiation"));
         if from_radiation > 0.0 {

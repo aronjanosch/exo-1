@@ -312,7 +312,7 @@ fn ignite(app: &mut App) {
         if b.health.burning() {
             return;
         }
-        b.health.step(&st.tuning, 0.1, Env { oxygen: 1.0, hot: true, glow: false, fire: 0.0, rod_per_s: 0.0, vacuum: false, suited: false });
+        b.health.step(&st.tuning, 0.1, Env { oxygen: 1.0, hot: true, glow: false, fire: 0.0, spicy_per_s: 0.0, vacuum: false, suited: false });
     }
     panic!("the host's body did not catch fire");
 }

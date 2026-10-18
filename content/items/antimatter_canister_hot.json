@@ -1,13 +1,14 @@
 {
-  "_comment": "A hot antimatter canister (#300, lane canisters). Hotter than the standard one: 100 available fill (Barotrauma's thorium canister). Carried and loaded like the standard canister. TODO(initiator): values, shape.",
+  "_comment": "A hot antimatter canister (#300, lane canisters). Hotter than the standard one: 100 available fill (Barotrauma's thorium canister). Carried (two hands) and loaded like the standard canister. TODO(initiator): values, shape.",
   "id": "antimatter_canister_hot",
   "name": "Hot antimatter canister",
   "code": "AMH",
   "take": "collect",
-  "hands": 1,
+  "hands": 2,
   "stack": 1,
   "use": "load_canister",
   "condition": true,
   "tags": ["medium"],
-  "shape": { "extents": [0.06, 0.6, 0.06], "mass": 3.0, "colour": [0.95, 0.5, 0.1] }
+  "model": "ship/canister_antimatter.glb",
+  "shape": { "extents": [0.15, 0.5, 0.15], "mass": 12.0, "colour": [0.95, 0.5, 0.1] }
 }

@@ -107,7 +107,7 @@ fn step_bed(time: Res<Time>, mut med: ResMut<Medbay>, st: Res<HealthState>) {
     if dt <= 0.0 {
         return;
     }
-    med.bed.step(&st.tuning, dt, Env { oxygen: 1.0, hot: false, glow: false, fire: 0.0, rod_per_s: 0.0, vacuum: false, suited: false });
+    med.bed.step(&st.tuning, dt, Env { oxygen: 1.0, hot: false, glow: false, fire: 0.0, spicy_per_s: 0.0, vacuum: false, suited: false });
 }
 
 /// The console's clicks: the patient switch, and a use of an item from the hands on the patient.

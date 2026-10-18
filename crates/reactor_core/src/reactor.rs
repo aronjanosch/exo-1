@@ -656,6 +656,8 @@ impl Reactor {
             return Err(canister);
         }
         canister.slot = slot;
+        // A life that is not a number (a damaged item) would poison the fill; it counts as spent.
+        canister.life = if canister.life.is_finite() { canister.life.clamp(0.0, 100.0) } else { 0.0 };
         self.canisters.push(canister);
         self.canisters.sort_by_key(|c| c.slot);
         self.sync_fill();

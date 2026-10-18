@@ -18,6 +18,7 @@ fn defs() -> ItemDefs {
         keeps_on_use: false,
         tags: vec!["extinguisher".into()],
         condition: true,
+        model: None,
         shape: Shape { extents: [0.2, 0.5, 0.2], mass: 6.0, colour: [1.0, 0.0, 0.0] },
     };
     let mut ex = ext.clone();

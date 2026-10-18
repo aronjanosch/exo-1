@@ -609,3 +609,39 @@ fn canisters_keep_their_slot() {
     assert!(r.pull_canister_from_slot(1).is_none(), "an empty slot gives nothing");
     assert!(r.slot_taken(0));
 }
+
+/// #320: a canister is one item with its own fill. Pulled and loaded again it keeps its remaining life: nothing
+/// is counted twice, nothing is reset, and a life that is not a number counts as spent.
+#[test]
+fn a_pulled_canister_keeps_its_burnt_life_when_loaded_again() {
+    let mut r = Reactor::new(ReactorTuning::default(), 3);
+    r.insert_canister_at(0, Canister::standard()).unwrap();
+    assert_eq!(r.available_fill(), 80.0);
+    assert!(r.set_power(true));
+    r.set_targets(100.0, 50.0);
+    run(&mut r, 30.0, 500.0);
+    let (c, _) = r.pull_canister_from_slot(0).expect("seated");
+    let life = c.life;
+    assert!(life > 0.0 && life < 100.0, "burnt part of it: {life}");
+    assert_eq!(r.available_fill(), 0.0, "pulled: no fill left from it");
+    r.insert_canister_at(1, c).unwrap();
+    assert_eq!(r.canisters().len(), 1, "no double count");
+    assert_eq!(r.canisters()[0].life, life, "no reset");
+    assert_eq!(r.available_fill(), 80.0);
+}
+
+#[test]
+fn a_spent_canister_seats_and_adds_nothing_and_nan_life_counts_as_spent() {
+    let mut r = Reactor::new(ReactorTuning::default(), 3);
+    let with = |life| Canister { kind: "standard".into(), heat: 80.0, life, slot: 0 };
+    r.insert_canister_at(0, with(0.0)).unwrap();
+    r.insert_canister_at(1, with(f64::NAN)).unwrap();
+    assert_eq!(r.canisters().len(), 2, "both seat");
+    assert_eq!(r.available_fill(), 0.0);
+    assert!(r.canisters().iter().all(|c| c.life == 0.0));
+    let (c, _) = r.pull_canister_from_slot(0).unwrap();
+    assert_eq!(c.life, 0.0, "a spent one comes back spent");
+    assert!(r.set_power(true));
+    run(&mut r, 5.0, 100.0);
+    assert!(r.heat().is_finite() && r.injection().is_finite());
+}

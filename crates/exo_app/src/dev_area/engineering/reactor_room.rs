@@ -9,8 +9,8 @@
 //! - `slot_1`, `slot_2`: the two canister slots. They show the canisters the reactor holds (`ReactorNews::canisters`);
 //!   F with a canister in hand loads it into the slot looked at (`Request::Load`), F with empty hands takes that slot's one out
 //!   (the brake, `ToHost::Pull(Some(slot))`). A taken slot refuses a load, an empty one a pull.
-//! - Not wired here (#319): `lever_start`, `toggle_boot_1..3`, the prime lamps. `EmergencyStop` is the hook: a SCRAM and an eject send it,
-//!   and #319 drops the start lever and the three boot toggles to off with `Controls::drop_to_off` when it reads it.
+//! - The start-up stand (#319, `start_stand.rs`): `toggle_boot_1..3`, the rotary `lever_start` (OFF, PRIME, RUN) and `lamp_prime_1..5`.
+//!   `EmergencyStop` is the hook: a SCRAM and an eject send it, and the stand drops the lever and the three toggles to off.
 //!
 //! Host-owned state: the `Machine` on the room entity is the host's. A client sends `ReactorAsk::Press(i)` (the index into
 //! `PRESS`) and shows the host's `ReactorNews` (covers, SCRAMs, canisters, ejected). Slots are not pressed through the kit:
@@ -49,8 +49,11 @@ pub const BUTTON_SCRAM: &str = "button_scram";
 pub const COVER_EJECT: &str = "cover_eject";
 pub const LEVER_EJECT: &str = "lever_eject";
 pub const SLOTS: [&str; CANISTER_SLOTS] = ["slot_1", "slot_2"];
+/// The start-up stand (#319): three boot toggles and the rotary START lever.
+pub const TOGGLES: [&str; 3] = ["toggle_boot_1", "toggle_boot_2", "toggle_boot_3"];
+pub const LEVER_START: &str = "lever_start";
 /// `ReactorAsk::Press(i)` names a part by its index here.
-pub const PRESS: [&str; 4] = [COVER_SCRAM, BUTTON_SCRAM, COVER_EJECT, LEVER_EJECT];
+pub const PRESS: [&str; 8] = [COVER_SCRAM, BUTTON_SCRAM, COVER_EJECT, LEVER_EJECT, TOGGLES[0], TOGGLES[1], TOGGLES[2], LEVER_START];
 
 /// A part the walker can look at: where it is in the model (m, glTF axes, origin on the floor under the column), where it is
 /// with its cover open (covers only), and how close to the view's ray it must be (m).
@@ -63,13 +66,17 @@ pub struct PartSpec {
     pub guard: Option<&'static str>,
 }
 
-/// The first four are `PRESS` in order, then the slots. Points are the parts' centres worked out from the node poses in
+/// The first eight are `PRESS` in order (the stand's points, #319: the grips above the pivots in `art/ship/reactor.md`), then the slots. Points are the parts' centres worked out from the node poses in
 /// `art/ship/reactor.md` (rest, and open for the covers); the slots' are their mouths.
-pub const PARTS: [PartSpec; 6] = [
+pub const PARTS: [PartSpec; 10] = [
     PartSpec { name: COVER_SCRAM, at: [0.5, 1.011, 1.72], open_at: Some([0.5, 1.103, 1.592]), radius: 0.14, guard: None },
     PartSpec { name: BUTTON_SCRAM, at: [0.5, 0.98, 1.71], open_at: None, radius: 0.08, guard: Some(COVER_SCRAM) },
     PartSpec { name: COVER_EJECT, at: [-0.866, 1.25, 0.866], open_at: Some([-1.005, 1.573, 1.005]), radius: 0.16, guard: None },
     PartSpec { name: LEVER_EJECT, at: [-0.813, 1.22, 0.813], open_at: None, radius: 0.1, guard: Some(COVER_EJECT) },
+    PartSpec { name: TOGGLES[0], at: [-1.66, 1.07, -0.15], open_at: None, radius: 0.06, guard: None },
+    PartSpec { name: TOGGLES[1], at: [-1.66, 1.07, 0.0], open_at: None, radius: 0.06, guard: None },
+    PartSpec { name: TOGGLES[2], at: [-1.66, 1.07, 0.15], open_at: None, radius: 0.06, guard: None },
+    PartSpec { name: LEVER_START, at: [-1.49, 1.17, 0.0], open_at: None, radius: 0.12, guard: None },
     PartSpec { name: "slot_1", at: [1.6, 1.12, 0.25], open_at: None, radius: 0.13, guard: None },
     PartSpec { name: "slot_2", at: [1.6, 1.12, -0.25], open_at: None, radius: 0.13, guard: None },
 ];
@@ -134,6 +141,15 @@ pub struct EmergencyStop {
 pub fn machine() -> Machine {
     let mut c = Controls::new();
     c.cover(COVER_SCRAM).button(BUTTON_SCRAM, Some(COVER_SCRAM)).cover(COVER_EJECT).lever(LEVER_EJECT, 2, Some(COVER_EJECT)).slot(SLOTS[0]).slot(SLOTS[1]);
+    for t in TOGGLES {
+        c.toggle(t, None);
+    }
+    c.lever_with(LEVER_START, 3, controls_core::LeverEnd::Wrap, None);
+    // The dev area starts with a warm, running reactor: the stand matches it (toggles on, lever at RUN).
+    for t in TOGGLES {
+        c.set_toggle(t, true);
+    }
+    c.set_lever(LEVER_START, reactor_core::startup::LEVER_RUN);
     Machine { controls: c, ..default() }
 }
 
@@ -144,6 +160,11 @@ pub fn bindings() -> Vec<Binding> {
         Binding::slide(BUTTON_SCRAM, BUTTON_SCRAM, Vec3::NEG_Z, 0.015),
         Binding::rotate(COVER_EJECT, COVER_EJECT, Vec3::X, -110.0),
         Binding::rotate(LEVER_EJECT, LEVER_EJECT, Vec3::X, 60.0),
+        // `art/ship/reactor.md`: each lever detent is +35 degrees, a toggle is -40 degrees from rest when on.
+        Binding::rotate(LEVER_START, LEVER_START, Vec3::X, 35.0),
+        Binding::rotate(TOGGLES[0], TOGGLES[0], Vec3::X, -40.0),
+        Binding::rotate(TOGGLES[1], TOGGLES[1], Vec3::X, -40.0),
+        Binding::rotate(TOGGLES[2], TOGGLES[2], Vec3::X, -40.0),
     ]
 }
 
@@ -169,6 +190,7 @@ pub fn plugin(app: &mut App) {
     app.add_message::<EmergencyStop>();
     app.add_systems(Update, spawn_room.after(crate::dev_area::spawn_devices).in_set(crate::phases::Frame::World));
     app.add_systems(FixedUpdate, host_presses.in_set(ShipSet::Asks));
+    app.add_plugins(super::start_stand::plugin);
     app.add_systems(FixedUpdate, fill_news.in_set(ShipSet::Fill));
     app.add_systems(FixedUpdate, (mirror_news, scram_notice).in_set(ShipSet::Effects));
     app.add_systems(FixedUpdate, react.after(apply_presses).in_set(crate::phases::Fx::Walker));
@@ -206,7 +228,7 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
 
 /// Host: a client's (or the host's own) F on a part becomes a press on the kit's machine. The refused set says what the machine will not
 /// do now: no second eject on an ejected core.
-fn host_presses(mut items: ResMut<Items>, sim: Res<ReactorSim>, mut machines: Query<(Entity, &mut Machine), With<ReactorRoom>>, mut out: MessageWriter<PressPart>) {
+pub(super) fn host_presses(mut items: ResMut<Items>, sim: Res<ReactorSim>, mut machines: Query<(Entity, &mut Machine), With<ReactorRoom>>, mut out: MessageWriter<PressPart>) {
     let Ok((e, mut m)) = machines.single_mut() else { return };
     m.refused.clear();
     if sim.room.reactor().ejected() {
@@ -222,7 +244,7 @@ fn host_presses(mut items: ResMut<Items>, sim: Res<ReactorSim>, mut machines: Qu
 }
 
 /// Host: what a press did to the machine. The SCRAM button vents the chamber; the eject lever throws the core out.
-fn react(mut sounds: MessageReader<PartSound>, mut machines: Query<&mut Machine, With<ReactorRoom>>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut stops: MessageWriter<EmergencyStop>) {
+pub(super) fn react(mut sounds: MessageReader<PartSound>, mut machines: Query<&mut Machine, With<ReactorRoom>>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut stops: MessageWriter<EmergencyStop>) {
     for s in sounds.read() {
         let Ok(mut m) = machines.get_mut(s.machine) else { continue };
         match (s.part.as_str(), &s.outcome) {
@@ -256,6 +278,8 @@ fn fill_news(mut items: ResMut<Items>, counts: Res<ReactorCounts>, machines: Que
     news.scram_cover = m.controls.is_open(COVER_SCRAM);
     news.eject_cover = m.controls.is_open(COVER_EJECT);
     news.scrams = counts.scrams;
+    news.toggles = TOGGLES.map(|t| m.controls.is_on(t));
+    news.lever = m.controls.lever_index(LEVER_START).unwrap_or(0);
 }
 
 /// Every process: the slots show the canisters in the reactor, the eject lever stays pulled while the core is out (and resets with a new
@@ -273,6 +297,10 @@ fn mirror_news(items: Res<Items>, mut machines: Query<&mut Machine, With<Reactor
         c.close_cover(COVER_EJECT);
     }
     if items.role == crate::items::Role::Client {
+        for (t, on) in TOGGLES.iter().zip(n.toggles) {
+            c.set_toggle(t, on);
+        }
+        c.set_lever(LEVER_START, n.lever);
         c.set_cover(COVER_SCRAM, n.scram_cover);
         c.set_cover(COVER_EJECT, n.eject_cover);
         if counter_fresh(&mut seen, n.scrams) {
@@ -305,6 +333,20 @@ pub fn describe(i: usize, m: &Machine, hand_has_canister: bool) -> Describe {
         BUTTON_SCRAM => Describe { verb: "SCRAM", name: "SCRAM button", blocked: shut(COVER_SCRAM).then_some("Cover shut") },
         COVER_EJECT => Describe { verb: if open { "Close" } else { "Open" }, name: "Core eject cover", blocked: None },
         LEVER_EJECT => Describe { verb: "Pull", name: "Core eject lever", blocked: shut(COVER_EJECT).then_some("Cover shut") },
+        "toggle_boot_1" | "toggle_boot_2" | "toggle_boot_3" => {
+            let name = match p.name {
+                "toggle_boot_1" => "Boot toggle 1 (battery bus)",
+                "toggle_boot_2" => "Boot toggle 2 (trap)",
+                _ => "Boot toggle 3 (injector)",
+            };
+            Describe { verb: if m.controls.is_on(p.name) { "Switch off" } else { "Switch on" }, name, blocked: None }
+        }
+        LEVER_START => {
+            let at = m.controls.lever_index(LEVER_START).unwrap_or(0);
+            let next = (at + 1) % 3;
+            let verb = ["Set to PRIME", "Set to RUN", "Set to OFF"][at.min(2) as usize];
+            Describe { verb, name: "START lever", blocked: m.refused.contains(&(LEVER_START.into(), next)).then_some("Start not ready") }
+        }
         _ => {
             let (name, seated) = if p.name == SLOTS[0] { ("Canister slot 1", m.controls.seated(SLOTS[0])) } else { ("Canister slot 2", m.controls.seated(SLOTS[1])) };
             match slot_action(seated.is_some(), hand_has_canister) {
@@ -391,7 +433,7 @@ fn dress_room(mut commands: Commands, new: Query<(Entity, &ReactorRoom), Added<R
             Transform::from_rotation(r.rot.as_quat()),
             crate::origin::WorldPos(r.origin),
             KitBindings(bindings()),
-            crate::named_material::WantMaterials(&["core_glow", "ring_glow", "lamp_slot_1", "lamp_slot_2"]),
+            crate::named_material::WantMaterials(&["core_glow", "ring_glow", "lamp_slot_1", "lamp_slot_2", "lamp_prime_1", "lamp_prime_2", "lamp_prime_3", "lamp_prime_4", "lamp_prime_5"]),
             ReactorVisual::default(),
         ));
     }
@@ -484,6 +526,13 @@ fn drive_visuals(
             let on = n.canisters[i].canister.is_some() && n.canisters[i].life > 0.0;
             m.emissive = if on { LinearRgba::rgb(0.1, 1.0, 0.25) * 3.0 } else { LinearRgba::BLACK };
             m.base_color = if on { Color::srgb(0.1, 0.9, 0.25) } else { Color::srgb(0.02, 0.04, 0.05) };
+        }
+        // The prime column (#319): the segments light one after another, bottom to top, as the trap charges.
+        for (i, name) in ["lamp_prime_1", "lamp_prime_2", "lamp_prime_3", "lamp_prime_4", "lamp_prime_5"].into_iter().enumerate() {
+            let Some(mut m) = named.0.get(name).and_then(|h| mats.get_mut(h)) else { continue };
+            let on = super::start_stand::prime_lamp_on(&n, i);
+            m.emissive = if on { LinearRgba::rgb(1.0, 0.7, 0.1) * 3.0 } else { LinearRgba::BLACK };
+            m.base_color = if on { Color::srgb(1.0, 0.7, 0.1) } else { Color::srgb(0.02, 0.04, 0.05) };
         }
     }
 }

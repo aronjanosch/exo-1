@@ -33,6 +33,7 @@
   "dev_9": ["Digit9"],
   "dev_0": ["Digit0"],
   "dev_minus": ["Minus"],
+  "dev_equals": ["Equal"],
   "debug_hud": ["F3"],
   "landing_mode": ["KeyK"],
   "turn_cap": ["F8"],

@@ -1014,8 +1014,9 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     // SP-01 is on whatever the master; the others show OFF while the master is off (`show`).
     panels.set(startup_screen::ID, startup_screen::panel(r));
     let readout = if help.0 { readout_help_panel(r, max_kw) } else { readout_panel_at(r, max_kw, time.elapsed_secs_f64()) };
-    // The main screen draws its own dark and word faces (NO POWER, ...), so it does not go through `show`. TODO(#319): the run-up flag.
-    panels.set(MAIN_ID, display_core::reactor_main::panel(r, max_kw, false));
+    // The main screen draws its own dark and word faces (NO POWER, ...), so it does not go through `show`.
+    let run_up = r.is_some_and(|r| r.start == item_core::wire::StartStage::RunUp);
+    panels.set(MAIN_ID, display_core::reactor_main::panel(r, max_kw, run_up));
     show(&mut panels, r, READOUT_ID, bot_tagged(readout, manned(&items, BotStation::Reactor)));
     show(&mut panels, r, PUMP_ID, bot_tagged(pump_panel_at(r, angle, blink), manned(&items, BotStation::Reactor)));
     show(&mut panels, r, AUX_ID, aux_panel(r));

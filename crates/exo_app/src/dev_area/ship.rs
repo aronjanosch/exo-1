@@ -9,7 +9,7 @@ use crate::dev_area::engineering::canisters;
 use crate::dev_area::fire::{FireGrid, FireModel};
 use crate::dev_area::hull::ShipAir;
 use crate::items::{Items, NetOut, Role};
-use item_core::wire::{Alarm, BotNews, BreakerGroup, EnemyNews, EnemyOutcome, CanisterSlot, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, StartupStage, GRAPH_POINTS, ROOMS};
+use item_core::wire::{Alarm, BotNews, BreakerGroup, EnemyNews, EnemyOutcome, CanisterSlot, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, StartStage, StartupStage, GRAPH_POINTS, ROOMS};
 use reactor_core::bots::{Bots, Row};
 use reactor_core::director::Situation;
 use reactor_core::engine_room::EngineSave;
@@ -105,6 +105,11 @@ impl ReactorSim {
         // The warm-up runs the tank down; a fresh room starts with a full one (TODO(initiator): later
         // the tank may start where the ship's last run left it).
         room.pump_mut().refill(100.0);
+        // The battery starts charged (PRIME and a SCRAM's restart live off it) and charges by itself while the reactor runs: no switch (#319).
+        let cap = room.battery().tuning().capacity_kwmin;
+        let start = room.battery().tuning().start_charge.clamp(0.0, 1.0);
+        room.battery_mut().set_charge_kwmin(cap * start);
+        room.battery_mut().set_recharge(1.0);
         ReactorSim { room, manual: false, injection: 0.0, converter: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; ROOMS], director: Director::new(&cfg.director, SEED), alarms: [RoomAlarm::new(cfg.alarm); ROOMS], clearing: false, bots: Bots::new(&cfg.bots) }
     }
 
@@ -243,6 +248,13 @@ impl ReactorSim {
                 BotNews { manned: self.bots.manned_row(row), level: self.bots.level(row) }
             }),
             bot_count: self.bots.count(),
+            start: wire_start(self.room.start().stage()),
+            // The stand's toggles and lever are the host's controls: `reactor_room` fills them in.
+            toggles: [false; 3],
+            lever: 0,
+            trap: self.room.start().trap(),
+            trap_left_s: self.room.start().prime_left_s(),
+            prime_need: self.room.prime_need_fraction(),
         }
     }
 }
@@ -267,6 +279,19 @@ pub fn wire_startup(s: reactor_core::Stage) -> StartupStage {
         Core::Jump => StartupStage::Jump,
         Core::Breakers => StartupStage::Breakers,
         Core::Ready => StartupStage::Ready,
+    }
+}
+
+/// The reactor's start stage as the wire carries it (#319).
+pub fn wire_start(s: reactor_core::StartStage) -> StartStage {
+    use reactor_core::StartStage as Core;
+    match s {
+        Core::Cold => StartStage::Cold,
+        Core::Boot => StartStage::Boot,
+        Core::Prime => StartStage::Prime,
+        Core::RunUp => StartStage::RunUp,
+        Core::Running => StartStage::Running,
+        Core::ShutDown => StartStage::ShutDown,
     }
 }
 

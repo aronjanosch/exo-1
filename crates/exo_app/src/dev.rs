@@ -20,11 +20,11 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, draw_dev.in_set(crate::phases::Frame::Hud));
 }
 
-pub const COMMANDS: [&str; 11] = ["Grant every licence", "+1000 credits", "Refill the boost", "Always day", "Always night", "Jump to day (cycle runs)", "Jump to night (cycle runs)", "Ship to the next settlement", "Noclip on/off", "God mode on/off", "Wear on/off"];
+pub const COMMANDS: [&str; 12] = ["Grant every licence", "+1000 credits", "Refill the boost", "Always day", "Always night", "Jump to day (cycle runs)", "Jump to night (cycle runs)", "Ship to the next settlement", "Noclip on/off", "God mode on/off", "Wear on/off", "Reactor: cold start"];
 
-const KEYS: [Tap; 11] = [Tap::Dev1, Tap::Dev2, Tap::Dev3, Tap::Dev4, Tap::Dev5, Tap::Dev6, Tap::Dev7, Tap::Dev8, Tap::Dev9, Tap::Dev0, Tap::DevMinus];
+const KEYS: [Tap; 12] = [Tap::Dev1, Tap::Dev2, Tap::Dev3, Tap::Dev4, Tap::Dev5, Tap::Dev6, Tap::Dev7, Tap::Dev8, Tap::Dev9, Tap::Dev0, Tap::DevMinus, Tap::DevEquals];
 /// The keys' names in the menu, in the order of `KEYS`.
-const KEY_NAMES: [&str; 11] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"];
+const KEY_NAMES: [&str; 12] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "="];
 
 /// Normal wear of the ship's machines (`reactor_core::EngineRoom::set_wear`): off by default, so the
 /// ship stands ready while nobody plays with it; the dev menu turns it on to test the repairs.
@@ -50,6 +50,8 @@ pub struct DevMenu {
     pub noclip: bool,
     pub god: bool,
     pub wear: bool,
+    /// F10 "Reactor: cold start" was pressed: the engineering glue puts the reactor into the cold state.
+    pub cold_reactor: bool,
 }
 
 /// Every licence the data has, earned by the host's client (the ones it has stay as they are).
@@ -137,6 +139,10 @@ pub fn update_dev(
             }
             if i == 10 {
                 menu.wear = true;
+                continue;
+            }
+            if i == 11 {
+                menu.cold_reactor = true;
                 continue;
             }
             let now = clock.t;

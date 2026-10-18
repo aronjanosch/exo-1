@@ -117,41 +117,18 @@ pub fn is_junction_box(id: &str) -> bool {
 /// the door (x -14) to the machines and clear of the reactor, pump and junction box screens.
 pub const OXYGEN_GENERATOR_AT: [f64; 2] = [-9.4, -13.0];
 pub const OXYGEN_GENERATOR_SIZE: [f64; 3] = [0.8, 1.2, 0.8];
-pub const AUX_GAP: f64 = 0.05;
-/// The parked AUX screen's spot (the junction box's old screen stood west of it, #322).
-pub const AUX_AT: [f64; 2] = [-17.0 + TALL_SCREEN_SIZE[0] + AUX_GAP, -18.98];
-/// The battery's screen: beside the AUX screen, on the same line. TODO(initiator): the spot on the wall.
-pub const BATTERY_AT: [f64; 2] = [AUX_AT[0] + TALL_SCREEN_SIZE[0] + AUX_GAP, AUX_AT[1]];
-/// The S screens' size (m): the 4 : 3 canvas.
-pub const SMALL_SCREEN_SIZE: [f64; 2] = [0.48, 0.36];
-/// The junction box's and AUX screens' size (m): the S width, one tier taller (320 x 320 px).
-pub const TALL_SCREEN_SIZE: [f64; 2] = [0.48, 0.48];
-/// The status monitor ST-01 on the engine room's east wall, south of the oxygen generator.
-pub const MONITOR_AT: [f64; 2] = [-9.04, -16.9];
-
-/// The bridge's wall points (panels sit 0.04 m inside their wall's face): the helm on the north wall
-/// (the ship's front), the jump drive and the shield on the west wall, the captain's console CP-01
-/// on the east wall.
+/// The bots' stand points for the helm and the gun (the bridge and the turret room are empty now: the screens are gone).
 pub const HELM_AT: [f64; 2] = [BRIDGE.centre[0], BRIDGE.centre[1] + BRIDGE.half[1] - 0.04];
-pub const JUMP_AT: [f64; 2] = [BRIDGE.centre[0] - BRIDGE.half[0] + 0.04, -3.4];
-pub const SHIELD_AT: [f64; 2] = [BRIDGE.centre[0] - BRIDGE.half[0] + 0.04, -5.4];
-pub const CAPTAIN_AT: [f64; 2] = [BRIDGE.centre[0] + BRIDGE.half[0] - 0.04, BRIDGE.centre[1]];
-/// The gun's screen GN-01 on the turret room's north wall.
 pub const GUNNERY_AT: [f64; 2] = [TURRET_ROOM.centre[0], TURRET_ROOM.centre[1] + TURRET_ROOM.half[1] - 0.04];
-/// The corridor's wall points: the faces are y -10.66 (south wall, facing north) and y -8.74
-/// (north wall, facing south; the north wall's face moved to -7.7 with the 3 m corridor, #311). ER-01 sits east of the engine door, BD-01 east of the bridge door.
 /// The airlock's panels (#309): the first on the airlock's north wall inside (the right-hand wall seen
 /// from the outer door; face y -8.7), the second on that wall's outer face (y -8.4) beside the outer door,
 /// the third in the equipment room on the inner door's wall (face x 9.9), south of the door, 0.5 m from
 /// its frame and from the room's corner, facing west into the room.
-pub const ENGINE_DOOR_PANEL_AT: [f64; 2] = [-12.2, -10.66];
-pub const BRIDGE_DOOR_PANEL_AT: [f64; 2] = [-13.4, -7.74];
 pub const AIRLOCK_PANEL_AT: [[f64; 2]; 3] = [[11.2, -8.7], [12.0, -8.4], [9.9, -11.2]];
 /// The airlock wall panel (#308): 0.20 x 0.32 m screen, its centre 1.4 m up (eye and hand height; start value).
 pub const AIRLOCK_SCREEN_SIZE: [f64; 2] = [0.20, 0.32];
 pub const AIRLOCK_PANEL_CENTRE: f64 = 1.4;
 pub const AIRLOCK_PANEL_MODEL: &str = "ship/airlock_wall_panel.glb";
-pub const VENT_LIFT: f64 = 1.3;
 
 pub struct Mount {
     pub id: PanelId,
@@ -162,22 +139,14 @@ pub struct Mount {
     pub turn: f64,
 }
 
-use crate::dev_area::engineering::panels as engineering_panels;
 use crate::dev_area::hull::panels as hull_panels;
 
-/// The wall screens. A screen's turn is the way it faces: 0 south, 90 east, 180 north, -90 west.
+/// The wall screens: only the airlock's three panels are left (the reactor's own screens are part of its model, `engineering::reactor_room`). A screen's turn is the way it faces: 0 south, 90 east, 180 north, -90 west.
 pub const SCREENS: &[Mount] = &[
-    // The engine room: the pump's screen on the pump, The reactor's own screens
-    // are part of its model (`engineering::reactor_room`). Parked (#306 Parkplatz): AUX, the battery and ST-01.
-    Mount { id: engineering_panels::PUMP_ID, name: engineering_panels::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
-    // The corridor: ER-01 on the south wall, BD-01 on the north wall. The
-    // airlock's panels (#309): one inside on the north wall, one outside beside the outer door.
-    Mount { id: hull_panels::DOOR_ID, name: hull_panels::DOOR_NAME, at: ENGINE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: hull_panels::BRIDGE_DOOR_ID, name: hull_panels::BRIDGE_DOOR_NAME, at: BRIDGE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    // The airlock's panels (#309): one inside on the north wall, one outside beside the outer door, one in the equipment room.
     Mount { id: hull_panels::AIRLOCK_IN_ID, name: hull_panels::AIRLOCK_IN_NAME, at: AIRLOCK_PANEL_AT[0], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 0.0 },
     Mount { id: hull_panels::AIRLOCK_OUT_ID, name: hull_panels::AIRLOCK_OUT_NAME, at: AIRLOCK_PANEL_AT[1], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 180.0 },
     Mount { id: hull_panels::AIRLOCK_SHIP_ID, name: hull_panels::AIRLOCK_SHIP_NAME, at: AIRLOCK_PANEL_AT[2], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 270.0 },
-    // The turret room: empty. Parked (#306 Parkplatz): GN-01 and the gun's housing (`TURRET_GUN`).
 ];
 
 pub const DOOR: &str = "engine_door";

@@ -26,10 +26,7 @@ pub mod fire;
 pub mod gear;
 pub mod hazards;
 pub mod hull;
-pub mod lab;
 pub mod layout;
-pub mod medbay;
-pub mod screens;
 pub mod ship;
 pub mod storage;
 pub mod turrets;
@@ -175,7 +172,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Update, spawn_devices.in_set(crate::phases::Frame::World));
     // One plugin per owner; the layout spawns the inner ship's walls and screens.
     app.add_plugins((ship::plugin, layout::plugin, hull::plugin, engineering::plugin, bridge::plugin, turrets::plugin));
-    app.add_plugins((crew::plugin, dev_asks::plugin, gear::plugin, equipment::plugin, fire::plugin, lab::plugin, medbay::plugin, storage::plugin, hazards::plugin, dev::plugin));
+    app.add_plugins((crew::plugin, dev_asks::plugin, gear::plugin, equipment::plugin, fire::plugin, storage::plugin, hazards::plugin, dev::plugin));
 }
 
 pub fn window_plugin(app: &mut App) {
@@ -185,7 +182,6 @@ pub fn window_plugin(app: &mut App) {
     engineering::junction_boxes::window_plugin(app);
     crew::window_plugin(app);
     fire::window_plugin(app);
-    bridge::window_plugin(app);
 }
 
 pub fn box_pose(frame: &Frame, planet: &PlanetRes, b: &PlaceholderBox) -> ((DVec3, DQuat), Option<DisplayPanel>) {

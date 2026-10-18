@@ -47,7 +47,6 @@ mod scenario_reload;
 mod scenario_savefile;
 mod scenario_sc_flight_hud;
 mod scenario_airlock;
-mod scenario_ship_ambush;
 mod scenario_site;
 mod scenario_slope_landing;
 mod scenario_space;

@@ -1,14 +1,11 @@
-//! Turrets: the gun GN-01 (FIRE, the CLEAR JAM hold, its heat and jams), its muzzle flash and the
-//! enemy's hits on the hull.
+//! Turrets: the gun's host rules (FIRE, the CLEAR JAM hold, its heat and jams). The gun's screen GN-01 and its
+//! flashes are gone with the old displays; the shot detectors stay for the audio.
 use crate::dev_area::*;
 use crate::dev_area::ship::{host_asks, ReactorSim, ShipSet};
 use crate::items::{Items, Role};
-use item_core::wire::ReactorAsk;
-
-pub mod panels;
+use item_core::wire::{ReactorAsk, ReactorNews};
 
 pub fn plugin(app: &mut App) {
-    app.add_plugins(panels::plugin);
     app.add_systems(FixedUpdate, asks.in_set(ShipSet::Asks));
 }
 
@@ -44,4 +41,19 @@ pub fn apply(s: &mut ReactorSim, a: ReactorAsk) -> bool {
         _ => return false,
     }
     true
+}
+
+/// A shot the gun fired (r40): the shot count went down and the reload started. A reset (the count
+/// falls with no reload) is no shot. The audio (`audio_slice`) uses it.
+pub fn shot_fired(prev: Option<u8>, r: &ReactorNews) -> bool {
+    prev.is_some_and(|p| r.weapon_shots < p) && r.weapon_reload_s > 0.0
+}
+
+/// An enemy shot the news shows (r41): the shot count went up in an encounter that runs. A new
+/// encounter starts its count at 0 and so is no shot. The audio (`audio_slice`) uses it.
+pub fn enemy_shot(prev: Option<u32>, r: &ReactorNews) -> bool {
+    match (prev, r.enemy) {
+        (Some(p), Some(e)) => e.shots > p,
+        _ => false,
+    }
 }

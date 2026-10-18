@@ -28,7 +28,6 @@ mod canisters;
 mod reactor_room;
 mod dev_area;
 mod dev_menu;
-mod dev_tour;
 mod figure;
 mod flight;
 mod help;
@@ -52,7 +51,6 @@ mod reload;
 mod sc_linear;
 mod sc_flight_hud;
 mod savefile;
-mod ship_ambush;
 mod airlock;
 mod space;
 mod swap;
@@ -86,10 +84,6 @@ pub fn plugin(name: &str, headless: bool) -> impl Plugin {
         if name == "airlock" {
             app.init_resource::<airlock::AirlockAudit>();
             app.add_systems(FixedLast, airlock::airlock_audit);
-        }
-        if name == "ship_ambush" {
-            app.init_resource::<ship_ambush::AmbushAudit>();
-            app.add_systems(FixedLast, ship_ambush::ambush_audit);
         }
         if name == "first-person-settings" && headless {
             app.init_resource::<ViewState>().init_resource::<ClearColor>().init_resource::<bevy::light::GlobalAmbientLight>();
@@ -630,16 +624,12 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "crate-hull" => cargo::crate_hull_steps(&mut s),
         "town" => town::town_steps(&mut s),
         "dev_area" => dev_area::dev_area_steps(&mut s, &shot_step),
-        "dev_tour" => dev_tour::dev_tour_steps(&mut s, &shot_step, dev_tour::Part::Rooms),
-        "dev_tour_air" => dev_tour::dev_tour_steps(&mut s, &shot_step, dev_tour::Part::Air),
-        "dev_tour_zones" => dev_tour::dev_tour_steps(&mut s, &shot_step, dev_tour::Part::Zones),
         "items" => items::items_steps(&mut s, &shot_step),
         "container" => container::container_steps(&mut s, &shot_step),
         "equipment" => equipment::equipment_steps(&mut s, &shot_step),
         "hud" => hud::hud_steps(&mut s, &shot_step),
         "health" => health::health_steps(&mut s),
         "engine_room" => engine_room::engine_room_steps(&mut s),
-        "ship_ambush" => ship_ambush::ship_ambush_steps(&mut s),
         "airlock" => airlock::airlock_steps(&mut s),
         "reactor" => reactor::reactor_steps(&mut s),
         "coolant" => coolant::coolant_steps(&mut s),

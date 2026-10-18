@@ -1,21 +1,9 @@
-//! The pump's coolant tank: the drain, the refill by hand and E-COOL.
+//! The pump's coolant: it cools by default, the dev drain empties the tank, the core climbs without coolant, E-COOL.
+//! (The refill by hand at the pump's housing is gone with the housing; the tank is refilled by a host hook here.)
 use super::*;
-use crate::controls::Controls;
-use crate::dev_area::engineering::coolant::{HOLD_S, RACK_AT};
-use crate::dev_area::{layout::{COOLANT_PUMP_AT, ROOM}};
 use crate::dev_area::ship::ReactorSim;
-use crate::dev_area::engineering::panels::PUMP_ID;
-use crate::displays::Panels;
-use crate::dev_area::DevArea;
-use super::items::{collect, items, look_at, outside};
 use crate::items::Items;
-use bevy::math::DVec3;
 use item_core::wire::{ReactorAsk, ReactorFault};
-
-fn ground(w: &mut World, p: [f64; 2], lift: f64) -> DVec3 {
-    let pl = planet(w);
-    w.resource::<DevArea>().ground(&pl, p, lift).expect("the dev area is there").0
-}
 
 fn tank(w: &World) -> f64 {
     w.resource::<ReactorSim>().room.pump().tank()
@@ -28,8 +16,6 @@ fn flow(w: &World) -> f64 {
 fn heat(w: &World) -> f64 {
     w.resource::<ReactorSim>().room.reactor().heat()
 }
-
-const DIGITS: [KeyCode; 8] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8];
 
 fn run(name: &'static str, limit: f64, mut body: impl FnMut(&mut World, &mut Ctx) -> Option<String> + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
@@ -49,39 +35,16 @@ fn run(name: &'static str, limit: f64, mut body: impl FnMut(&mut World, &mut Ctx
     })
 }
 
-fn select(name: &'static str, def: &'static str) -> Step {
-    let mut slot = 0;
-    run(name, 2.0, move |w, c| {
-        if c.t == 0.0 {
-            slot = (0..8).find(|&i| items(w).client.view.slot(i).is_some_and(|s| s.item.kind.as_str() == def)).unwrap_or(0);
-            tap(w, DIGITS[slot]);
-            return None;
-        }
-        if items(w).client.view.selected != slot {
-            return None;
-        }
-        check(c, true, format!("{name}: slot {} selected", slot + 1));
-        Some(format!("slot {}", slot + 1))
-    })
-}
-
 pub(super) fn coolant_steps(s: &mut Vec<Step>) {
-    s.push(Box::new(|w, c| {
-        begin(w, c, "coolant: the rack and the host's body for the walker");
-        w.resource_mut::<Items>().delay = super::items::DELAY;
-        let ready = w.resource::<DevArea>().frame.is_some() && outside(w, "coolant_canister").is_some() && w.resource::<crate::health::HealthState>().bodies.contains_key(&crate::items::LOCAL);
-        if !ready && c.t < 5.0 {
-            return false;
+    s.push(run("coolant: the pump runs and cools by default", 6.0, |w, c| {
+        let ready = w.resource::<crate::dev_area::DevArea>().frame.is_some();
+        if !ready || c.t < 1.0 {
+            return None;
         }
-        check(c, ready, "coolant: the rack and the walker's body are there".into());
-        let p = ground(w, ROOM.point([RACK_AT[0], RACK_AT[1] - 0.8]), 0.0);
-        place_walker(w, p);
-        end(w, c, "at the rack".into());
-        true
+        let pump = &w.resource::<ReactorSim>().room;
+        check(c, pump.pump().on() && pump.flow() > 0.0 && pump.pump().tank() > 0.0, format!("coolant: the pump is on with flow {:.2} and {:.0} % in the tank", pump.flow(), pump.pump().tank()));
+        Some(format!("tank {:.0} %", tank(w)))
     }));
-    s.extend(collect("coolant_canister", "Coolant canister"));
-    s.push(run("coolant: the stack of three is in the bar", 2.0, |w, _| (items(w).client.view.count("coolant_canister") == 3).then(|| "three canisters".into())));
-    s.push(select("coolant: the canisters are selected", "coolant_canister"));
 
     s.push(run("coolant: the dev drain empties the tank", 3.0, |w, c| {
         if c.t == 0.0 {
@@ -92,8 +55,6 @@ pub(super) fn coolant_steps(s: &mut Vec<Step>) {
             return None;
         }
         check(c, tank(w) == 0.0 && flow(w) == 0.0, format!("coolant: the tank is empty and no flow ({} %, {:.2})", tank(w), flow(w)));
-        let panel = w.resource::<Panels>().get(&PUMP_ID).map(|p| format!("{p:?}")).unwrap_or_default();
-        check(c, panel.contains("EMPTY"), "coolant: the pump screen says EMPTY".into());
         c.v.insert("t0", heat(w));
         Some(format!("tank {:.0} %", tank(w)))
     }));
@@ -104,41 +65,16 @@ pub(super) fn coolant_steps(s: &mut Vec<Step>) {
         Some(format!("{t0:.1} -> {t1:.1}"))
     }));
 
-    s.push(run("coolant: the walker stands at the pump", 3.0, |w, c| {
+    s.push(run("coolant: a refilled tank brings the flow back", 3.0, |w, c| {
         if c.t == 0.0 {
-            let feet = ground(w, [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 1.4], 0.0);
-            place_walker(w, feet);
+            w.resource_mut::<ReactorSim>().room.pump_mut().refill(50.0);
+            return None;
         }
-        let target = ground(w, COOLANT_PUMP_AT, 0.6);
-        look_at(w, target);
         if c.t < 0.5 {
             return None;
         }
-        Some("at the pump".into())
-    }));
-    s.push(run("coolant: LMB held on the pump refills the tank", HOLD_S + 4.0, |w, c| {
-        if c.t == 0.0 {
-            let target = ground(w, COOLANT_PUMP_AT, 0.6);
-            look_at(w, target);
-            w.resource_mut::<Controls>().primary_held = true;
-            return None;
-        }
-        let target = ground(w, COOLANT_PUMP_AT, 0.6);
-        look_at(w, target);
-        if c.t < HOLD_S + 1.0 {
-            return None;
-        }
-        w.resource_mut::<Controls>().primary_held = false;
         check(c, flow(w) > 0.0, format!("coolant: the flow comes back ({:.2})", flow(w)));
         Some(format!("tank {:.0} %", tank(w)))
-    }));
-    s.push(run("coolant: one canister is used up", 3.0, |w, c| {
-        if c.t < 0.5 {
-            return None;
-        }
-        let n = items(w).client.view.count("coolant_canister");
-        check(c, n == 2, format!("coolant: two canisters are left ({n})"));
-        Some(format!("{n} left"))
     }));
     s.push(run("coolant: E-COOL takes its tank cost and starts the cooldown", 3.0, |w, c| {
         if c.t == 0.0 {

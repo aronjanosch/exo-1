@@ -1,4 +1,5 @@
-//! The bridge: the captain (CP-01 and the captain's consoles), the helm, the jump drive and the shield.
+//! The bridge's host rules: the helm's throttle and the jump drive's ARM and JUMP, and the jump's notice. The old screens
+//! (helm, JD-01, shield, CP-01, the captain's consoles) are gone.
 use crate::dev_area::*;
 use crate::dev_area::ship::{counter_fresh, host_asks, ReactorCounts, ReactorSim, ShipSet};
 use crate::gameplay::Gameplay;
@@ -6,18 +7,9 @@ use crate::items::Items;
 use gameplay_core::notice::{Notice, NoticeKind};
 use item_core::wire::ReactorAsk;
 
-pub mod captain;
-pub mod captain_screen;
-pub mod panels;
-
 pub fn plugin(app: &mut App) {
-    app.add_plugins((captain::plugin, panels::plugin));
     app.add_systems(FixedUpdate, asks.in_set(ShipSet::Asks));
     app.add_systems(FixedUpdate, jump_notice.in_set(ShipSet::Effects));
-}
-
-pub fn window_plugin(app: &mut App) {
-    captain::window_plugin(app);
 }
 
 fn is_mine(a: &ReactorAsk) -> bool {

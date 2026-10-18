@@ -607,6 +607,8 @@ pub struct ReactorNews {
     pub battery_recharge: f64,
     /// kW the battery gave in the last step (0 when the grid did not need it).
     pub battery_kw: f64,
+    /// kW the battery took from the surplus in the last step (0 when it did not charge).
+    pub battery_in_kw: f64,
     /// The rooms the status monitor shows, by index: 0 the engine room, 1 the corridor (r38), 2 the bridge (r44).
     pub rooms: [RoomAir; ROOMS],
     /// The three vents' valves, open (true): index 0 the engine room's, 1 the corridor's (r38), 2 the
@@ -930,6 +932,7 @@ mod tests {
             battery_charge: 0.75,
             battery_recharge: 0.4,
             battery_kw: 120.0,
+            battery_in_kw: 0.0,
             rooms: [RoomAir { o2: 0.84, fire: false }, RoomAir { o2: 0.31, fire: true }, RoomAir { o2: 0.5, fire: false }],
             shield: 0.7,
             quantum_shield: false,

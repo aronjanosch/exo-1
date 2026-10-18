@@ -8,6 +8,7 @@ pub mod captain;
 pub mod hud;
 pub mod monitor;
 pub mod reactor_main;
+pub mod reactor_supply;
 pub mod raster;
 pub mod target;
 pub mod theme;

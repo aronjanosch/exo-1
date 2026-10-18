@@ -45,12 +45,14 @@ pub struct Battery {
     recharge: f64,
     /// kW it gave in the last step.
     output_kw: f64,
+    /// kW it took in the last step (for the supply screen; not saved, 0 after a load).
+    input_kw: f64,
 }
 
 impl Battery {
     /// An empty battery at recharge 0 (Barotrauma starts empty).
     pub fn new(tuning: BatteryTuning) -> Battery {
-        Battery { tuning, charge_kwmin: 0.0, recharge: 0.0, output_kw: 0.0 }
+        Battery { tuning, charge_kwmin: 0.0, recharge: 0.0, output_kw: 0.0, input_kw: 0.0 }
     }
 
     pub fn to_save(&self) -> BatterySave {
@@ -58,7 +60,7 @@ impl Battery {
     }
 
     pub fn from_save(tuning: BatteryTuning, s: &BatterySave) -> Battery {
-        Battery { tuning, charge_kwmin: s.charge_kwmin, recharge: s.recharge, output_kw: s.output_kw }
+        Battery { tuning, charge_kwmin: s.charge_kwmin, recharge: s.recharge, output_kw: s.output_kw, input_kw: 0.0 }
     }
 
     pub fn tuning(&self) -> &BatteryTuning {
@@ -93,6 +95,16 @@ impl Battery {
         self.output_kw
     }
 
+    /// kW the battery took from the surplus in the last step (`absorb`).
+    pub fn input_kw(&self) -> f64 {
+        self.input_kw
+    }
+
+    /// The step's start: nothing taken yet.
+    pub fn clear_input(&mut self) {
+        self.input_kw = 0.0;
+    }
+
     /// Most kW it can give for `dt` seconds: max output, cut to 0..1 of it below 10 % charge
     /// (Barotrauma PowerContainer.cs:252-254), and limited by the charge left.
     pub fn max_output_kw(&self, dt: f64) -> f64 {
@@ -119,6 +131,7 @@ impl Battery {
         let room_kw = (self.tuning.capacity_kwmin - self.charge_kwmin) * 60.0 / (dt * eff);
         let take = (self.recharge * self.tuning.max_recharge_kw).min(surplus_kw.max(0.0)).min(room_kw.max(0.0));
         self.charge_kwmin = (self.charge_kwmin + take * dt / 60.0 * eff).min(self.tuning.capacity_kwmin);
+        self.input_kw = take;
         take
     }
 }

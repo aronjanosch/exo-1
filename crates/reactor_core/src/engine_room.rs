@@ -1280,6 +1280,7 @@ impl EngineRoom {
         // The battery sits behind the reactor: it gives what the main grid lacks, and takes the
         // surplus only when nothing was short (`load` is the main grid's request in both modes).
         let shortfall = (load - through).max(0.0);
+        self.battery.clear_input();
         // With the master off the battery is cut off too: it neither gives nor takes.
         let supply = if live { through + self.battery.supply(shortfall, dt) } else { 0.0 };
         if self.aux {

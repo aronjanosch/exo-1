@@ -11,7 +11,7 @@ use display_core::{button, canvas, column, ctl, font, label, micro, readout, row
 use item_core::wire::{BotStation, BreakerGroup, CanisterKind, CanisterSlot, Lamp, PumpMode, ReactorAsk, ReactorNews, CANISTER_SLOTS};
 
 use crate::dev_area::crew::{bot_tagged, manned};
-use crate::dev_area::engineering::reactor_room::MAIN_ID;
+use crate::dev_area::engineering::reactor_room::{MAIN_ID, SUPPLY_ID};
 use crate::dev_area::engineering::startup_screen;
 
 pub fn plugin(app: &mut App) {
@@ -1016,6 +1016,8 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     let readout = if help.0 { readout_help_panel(r, max_kw) } else { readout_panel_at(r, max_kw, time.elapsed_secs_f64()) };
     // The main screen draws its own dark and word faces (NO POWER, ...), so it does not go through `show`. TODO(#319): the run-up flag.
     panels.set(MAIN_ID, display_core::reactor_main::panel(r, max_kw, false));
+    // The supply screen goes dark by the main screen's rule (`reactor_main::face`), inside its panel.
+    panels.set(SUPPLY_ID, display_core::reactor_supply::panel(r));
     show(&mut panels, r, READOUT_ID, bot_tagged(readout, manned(&items, BotStation::Reactor)));
     show(&mut panels, r, PUMP_ID, bot_tagged(pump_panel_at(r, angle, blink), manned(&items, BotStation::Reactor)));
     show(&mut panels, r, AUX_ID, aux_panel(r));

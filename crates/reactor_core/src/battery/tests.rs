@@ -123,3 +123,13 @@ fn battery_with_no_charge_leaves_the_grid_dark_when_the_reactor_is_off() {
     assert_eq!(room.battery().output_kw(), 0.0);
     assert!(!room.grid().supply(Group::LifeSupport).on);
 }
+
+#[test]
+fn battery_remembers_what_it_took_in_the_last_step() {
+    let mut b = bat();
+    b.set_recharge(0.5);
+    b.absorb(300.0, DT);
+    assert!((b.input_kw() - 100.0).abs() < 1e-9);
+    b.clear_input();
+    assert_eq!(b.input_kw(), 0.0);
+}

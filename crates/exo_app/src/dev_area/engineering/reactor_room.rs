@@ -39,6 +39,15 @@ pub const MAIN_AT: [f64; 3] = [0.0, 1.39366, 1.44558];
 pub const MAIN_TILT_DEG: f64 = -10.437;
 const MAIN_OUT: f64 = 0.003;
 
+/// The supply screen `screen_supply` (#318): 1.10 x 0.12 m, 1280 x 140 panel px, tilted back 30 degrees on the console's top
+/// edge (`art/ship/reactor.py` SUPPLY_AT, SUPPLY_RX; the model's quad is 1 mm out of its frame). Centre in glTF axes
+/// including that 1 mm along the normal; the panel stands 3 mm in front of it like the main screen's.
+pub const SUPPLY_ID: display_core::PanelId = display_core::PanelId::new("reactor_supply");
+pub const SUPPLY_NAME: &str = "REACTOR SUPPLY";
+pub const SUPPLY_SIZE: [f64; 2] = [1.10, 0.12];
+pub const SUPPLY_AT: [f64; 3] = [0.0, 1.8605, 1.36087];
+pub const SUPPLY_TILT_DEG: f64 = -30.0;
+
 pub const MODEL: &str = "ship/reactor.glb";
 pub const CANISTER_MODEL: &str = "ship/canister_antimatter.glb";
 /// The model's +Z (the console's front) points to the door side: north in the area.
@@ -201,7 +210,10 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
     let screen_rot = rot * DQuat::from_rotation_x(MAIN_TILT_DEG.to_radians());
     let centre = ground + rot * DVec3::from(MAIN_AT) + screen_rot * DVec3::Z * MAIN_OUT;
     let screen = commands.spawn((crate::displays::DisplayPanel { id: MAIN_ID, name: MAIN_NAME.into(), size_m: DVec2::from(MAIN_SIZE), centre, rot: screen_rot }, crate::displays::Bare)).id();
-    area.entities.extend([hull, room, screen]);
+    let supply_rot = rot * DQuat::from_rotation_x(SUPPLY_TILT_DEG.to_radians());
+    let supply_centre = ground + rot * DVec3::from(SUPPLY_AT) + supply_rot * DVec3::Z * MAIN_OUT;
+    let supply = commands.spawn((crate::displays::DisplayPanel { id: SUPPLY_ID, name: SUPPLY_NAME.into(), size_m: DVec2::from(SUPPLY_SIZE), centre: supply_centre, rot: supply_rot }, crate::displays::Bare, crate::displays::ReadOnly)).id();
+    area.entities.extend([hull, room, screen, supply]);
 }
 
 /// Host: a client's (or the host's own) F on a part becomes a press on the kit's machine. The refused set says what the machine will not

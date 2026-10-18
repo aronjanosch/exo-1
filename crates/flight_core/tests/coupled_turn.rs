@@ -112,6 +112,56 @@ fn enabling_g_safe_also_limits_existing_boost_output_immediately() {
 }
 
 #[test]
+#[ignore = "Known coupled turn-budget stall; diagnostic reproduction, not fixed yet"]
+fn accelerating_after_rotating_on_the_spot_does_not_pause_a_backward_loop() {
+    let mut baseline = 0;
+    for variant in ["baseline", "g_safe_off", "anti_drift_off", "grav_comp_off", "proximity_off", "gravity_zero", "density_zero", "vacuum", "vacuum_anti_drift_off"] {
+        let mut ship = ScShip::new(tuning());
+        let mut env = Air { density: 0.3, ..Default::default() };
+        match variant {
+            "g_safe_off" => ship.modes.g_safe = false,
+            "anti_drift_off" => ship.tuning.linear.anti_drift = false,
+            "grav_comp_off" => ship.modes.grav_comp = false,
+            "proximity_off" => ship.modes.proximity = false,
+            "gravity_zero" => env.g = 0.0,
+            "density_zero" => env.density = 0.0,
+            "vacuum" => { env.density = 0.0; env.g = 0.0; }
+            "vacuum_anti_drift_off" => { env.density = 0.0; env.g = 0.0; ship.tuning.linear.anti_drift = false; }
+            _ => {}
+        }
+        let mut body = body_at(DVec3::Y * 10000.0);
+        let mut input = FlightInput { turn: DVec2::NEG_X, piloted: true, ..Default::default() };
+        // Unlike the cruise-speed loop test, start by spinning at rest, then add thrust.
+        fly(&mut ship, &mut body, &input, &ModeCmds::default(), &env, 1.0);
+        input.thrust = DVec3::NEG_Z;
+        let mut down_min = f64::INFINITY;
+        let (mut pause_ticks, mut longest_pause) = (0, 0);
+        let mut worst = (0.0, 0.0, 0.0, false);
+        for tick in 0..480 {
+            let out = ship.step(&body, &input, &ModeCmds::default(), &env, DT);
+            let pitch = -(body.rot.inverse() * out.ang_vel).x;
+            let nose_down = (body.rot * DVec3::NEG_Z).dot(DVec3::NEG_Y);
+            if nose_down > 0.9 {
+                down_min = down_min.min(pitch);
+                pause_ticks = if pitch < 0.1 { pause_ticks + 1 } else { 0 };
+                if pause_ticks > longest_pause {
+                    longest_pause = pause_ticks;
+                    worst = (tick as f64 * DT, body.lin_vel.length(), body.pos.y, ship.status.rate_capped);
+                }
+            } else {
+                pause_ticks = 0;
+            }
+            body.lin_vel = out.lin_vel;
+            body.ang_vel = out.ang_vel;
+            body.integrate(DT);
+        }
+        eprintln!("{variant}: downward min {down_min:.5} rad/s, pause {:.3}s, (time, speed, height, rate_capped) {worst:?}", longest_pause as f64 * DT);
+        if variant == "baseline" { baseline = longest_pause; }
+    }
+    assert!(baseline < 6, "looping pauses nose-down for {:.3}s after accelerating from rest", baseline as f64 * DT);
+}
+
+#[test]
 fn looping_does_not_pause_rotation_while_pointing_down() {
     let mut failures = Vec::new();
     for height in [400.0, 10000.0] {

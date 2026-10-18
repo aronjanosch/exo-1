@@ -17,7 +17,7 @@
 //! `origin/round/dev-area`). It is not the player figure (#32) and has no status label yet
 //! (`public_status.rs` labels the net figures only; TODO(initiator)). It walks in a straight line through
 //! walls (TODO(initiator): pathing).
-use crate::dev_area::layout::{CORRIDOR, GUNNERY_AT, HELM_AT, REACTOR_SCREEN_AT};
+use crate::dev_area::layout::{CORRIDOR, GUNNERY_AT, HELM_AT, REACTOR_FRONT_AT};
 use crate::dev_area::ship::{wire_pump, ReactorSim};
 use super::DevArea;
 use crate::displays::{ActiveDisplay, DisplayPanel};
@@ -46,12 +46,12 @@ pub fn station_of(s: BotStation) -> Option<Station> {
     row_of(s).station()
 }
 
-/// The station whose screen a panel is. The reactor's station is its readout and its pump.
+/// The station whose screen a panel is. The reactor's station is its main screen and its pump.
 pub fn station_of_panel(id: &display_core::PanelId) -> Option<Station> {
-    use crate::dev_area::{turrets::panels::GUNNERY_ID, bridge::panels::HELM_ID, engineering::{panels::{JUNCTION_ID, PUMP_ID, READOUT_ID}, reactor_room::MAIN_ID}};
+    use crate::dev_area::{turrets::panels::GUNNERY_ID, bridge::panels::HELM_ID, engineering::{panels::{JUNCTION_ID, PUMP_ID}, reactor_room::MAIN_ID}};
     if *id == GUNNERY_ID {
         Some(Station::Gunnery)
-    } else if *id == READOUT_ID || *id == PUMP_ID || *id == MAIN_ID {
+    } else if *id == PUMP_ID || *id == MAIN_ID {
         Some(Station::Reactor)
     } else if *id == JUNCTION_ID {
         Some(Station::Power)
@@ -97,13 +97,13 @@ pub fn occupied(using: &BTreeMap<PlayerId, BotStation>) -> [bool; STATIONS] {
 }
 
 /// Where the stations and the pads stand on the ground (dev area metres). The station rows are the
-/// screens: GN-01 at its screen, the reactor at its readout, POWER at the junction box, the HELM at its
+/// screens: GN-01 at its screen, the reactor in front of its main screen, POWER at the junction box, the HELM at its
 /// panel. The bots start in the corridor, two metres apart. TODO(initiator): a stand point in front of a
 /// screen, and the pads' spots.
 pub fn layout() -> Layout {
     let pads = [CORRIDOR.point([-6.0, 0.0]), CORRIDOR.point([-4.0, 0.0]), CORRIDOR.point([-2.0, 0.0])];
     // POWER stands at JB-1 (the old JB-01 screen is gone, #322).
-    Layout { stations: [GUNNERY_AT, REACTOR_SCREEN_AT, crate::dev_area::layout::junction_front(0, 0.3), HELM_AT], pads }
+    Layout { stations: [GUNNERY_AT, REACTOR_FRONT_AT, crate::dev_area::layout::junction_front(0, 0.3), HELM_AT], pads }
 }
 
 /// The host's bot round: this player's station is reported when it changes (every role; a client sends
@@ -223,8 +223,8 @@ mod tests {
     }
 
     #[test]
-    fn the_reactor_station_is_its_readout_and_its_pump() {
-        assert_eq!(station_of_panel(&crate::dev_area::engineering::panels::READOUT_ID), Some(Station::Reactor));
+    fn the_reactor_station_is_its_main_screen_and_its_pump() {
+        assert_eq!(station_of_panel(&crate::dev_area::engineering::reactor_room::MAIN_ID), Some(Station::Reactor));
         assert_eq!(station_of_panel(&crate::dev_area::engineering::panels::PUMP_ID), Some(Station::Reactor));
         assert_eq!(station_of_panel(&display_core::PanelId::new("captain_console")), None);
     }

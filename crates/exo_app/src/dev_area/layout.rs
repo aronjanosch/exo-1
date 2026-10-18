@@ -124,24 +124,12 @@ pub const AUX_GAP: f64 = 0.05;
 pub const AUX_AT: [f64; 2] = [-17.0 + TALL_SCREEN_SIZE[0] + AUX_GAP, -18.98];
 /// The battery's screen: beside the AUX screen, on the same line. TODO(initiator): the spot on the wall.
 pub const BATTERY_AT: [f64; 2] = [AUX_AT[0] + TALL_SCREEN_SIZE[0] + AUX_GAP, AUX_AT[1]];
-/// The M-tier screen's spot: on the south wall's inner face next to the reactor (east of it),
-/// its height from the floor.
-pub const REACTOR_SCREEN_AT: [f64; 2] = [-11.8, -18.96];
-pub const REACTOR_SCREEN_LIFT: f64 = 0.9;
-/// The readout's size on the wall (m): the M screen's 1.6 : 1 aspect.
-pub const READOUT_SIZE: [f64; 2] = [1.6, 1.0];
 /// The S screens' size (m): the 4 : 3 canvas.
 pub const SMALL_SCREEN_SIZE: [f64; 2] = [0.48, 0.36];
 /// The junction box's and AUX screens' size (m): the S width, one tier taller (320 x 320 px).
 pub const TALL_SCREEN_SIZE: [f64; 2] = [0.48, 0.48];
-pub const STATUS_SIZE: [f64; 2] = READOUT_SIZE;
-pub const STATUS_GAP: f64 = 0.05;
-pub const STATUS_AT: [f64; 2] = [REACTOR_SCREEN_AT[0] + READOUT_SIZE[0] * 0.5 + STATUS_GAP + STATUS_SIZE[0] * 0.5, REACTOR_SCREEN_AT[1]];
-pub const STATUS_LIFT: f64 = REACTOR_SCREEN_LIFT + (READOUT_SIZE[1] - STATUS_SIZE[1]) * 0.5;
 /// The status monitor ST-01 on the engine room's east wall, south of the oxygen generator.
 pub const MONITOR_AT: [f64; 2] = [-9.04, -16.9];
-/// The ship's power panel SP-01 on the engine room's west wall, south of the vent.
-pub const STARTUP_AT: [f64; 2] = [-18.96, -16.5];
 
 /// The bridge's wall points (panels sit 0.04 m inside their wall's face): the helm on the north wall
 /// (the ship's front), the jump drive and the shield on the west wall, the captain's console CP-01
@@ -184,10 +172,8 @@ use crate::dev_area::hull::panels as hull_panels;
 
 /// The wall screens. A screen's turn is the way it faces: 0 south, 90 east, 180 north, -90 west.
 pub const SCREENS: &[Mount] = &[
-    // The engine room: the reactor's readout by the reactor, the pump's on the pump, the junction
-    // box on the south wall, the engine room's vent on the west wall. Parked (#306 Parkplatz): RX-02,
-    // AUX, the battery, ST-01 and SP-01 (their `Mount` lines are in git history, commit of #306).
-    Mount { id: engineering_panels::READOUT_ID, name: engineering_panels::READOUT_NAME, at: REACTOR_SCREEN_AT, lift: REACTOR_SCREEN_LIFT, size: READOUT_SIZE, turn: 180.0 },
+    // The engine room: the pump's screen on the pump, the engine room's vent on the west wall. The reactor's own screens
+    // are part of its model (`engineering::reactor_room`). Parked (#306 Parkplatz): AUX, the battery and ST-01.
     Mount { id: engineering_panels::PUMP_ID, name: engineering_panels::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: hull_panels::VENT_ENGINE_ID, name: hull_panels::VENT_ENGINE_NAME, at: VENT_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
     // The corridor: ER-01 and the corridor's vent on the south wall, BD-01 on the north wall. The

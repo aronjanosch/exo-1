@@ -29,8 +29,8 @@ pub const PUMP: &str = "pump";
 /// The three junction boxes (#322): JB-1 engine room, JB-2 corridor, JB-3 turret room.
 pub const JUNCTIONS: [&str; 3] = ["junction_1", "junction_2", "junction_3"];
 pub const OXYGEN_GENERATOR: &str = "oxygen_generator";
-/// Station id of the reactor readout (`crate::dev_area::engineering::panels::READOUT_ID`), the one an operate order points at.
-pub const REACTOR_STATION: &str = "reactor_readout";
+/// Station id of the reactor's main screen (`crate::dev_area::engineering::reactor_room::MAIN_ID`), the one an operate order points at.
+pub const REACTOR_STATION: &str = "reactor_main";
 /// Smoothing of the oxygen change per second (s).
 const O2_SMOOTH_S: f64 = 1.0;
 /// Air in the engine room below this share runs the generator's repair order (a start value).

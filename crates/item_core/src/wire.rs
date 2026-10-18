@@ -235,6 +235,19 @@ impl StartupStage {
     }
 }
 
+/// The reactor's start-up stage as the host has it (#319, `reactor_core::startup::StartStage`). Cold is the dark cold start;
+/// the screens are awake from Boot on. Running is the default: a warm, running reactor.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StartStage {
+    Cold,
+    Boot,
+    Prime,
+    RunUp,
+    #[default]
+    Running,
+    ShutDown,
+}
+
 /// A row of the captain's bot list (r42, #253; `reactor_core::bots::Row`), as the captain's list and the
 /// news name them: the four stations (r42), then the three work rows (r44: FIRE, REPAIR, BREACH). The
 /// order is the row order, `Row::ALL`.
@@ -662,6 +675,16 @@ pub struct ReactorNews {
     pub bots: [BotNews; BOT_ROWS],
     /// The dev BOTS setting: how many bots there are, 0..3 (r42).
     pub bot_count: u8,
+    /// The reactor's start-up stage (#319, `reactor_core::StartStage`): Running is the warm default.
+    pub start: StartStage,
+    /// The three boot toggles and the START lever's detent (0 OFF, 1 PRIME, 2 RUN): the host's controls, filled by the reactor room.
+    pub toggles: [bool; 3],
+    pub lever: u8,
+    /// The magnetic trap's charge, 0..1, and the seconds of PRIME left.
+    pub trap: f64,
+    pub trap_left_s: f64,
+    /// The share of the battery's capacity PRIME needs to latch (0..1).
+    pub prime_need: f64,
 }
 
 impl ReactorNews {
@@ -946,6 +969,12 @@ mod tests {
             weapon_overheated: false,
             bots: [BotNews { manned: true, level: 3 }, BotNews::default(), BotNews { manned: false, level: 1 }, BotNews::default(), BotNews { manned: false, level: 3 }, BotNews::default(), BotNews { manned: false, level: 0 }],
             bot_count: 2,
+            start: StartStage::Prime,
+            toggles: [true, false, true],
+            lever: 1,
+            trap: 0.4,
+            trap_left_s: 6.0,
+            prime_need: 0.083,
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,

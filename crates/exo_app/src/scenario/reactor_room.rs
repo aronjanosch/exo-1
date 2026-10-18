@@ -9,7 +9,7 @@ use crate::dev_area::layout::REACTOR_FRONT_AT;
 use crate::dev_area::ship::{ReactorCounts, ReactorSim};
 use crate::dev_area::DevArea;
 use crate::items::{Items, LOCAL};
-use item_core::wire::ReactorAsk;
+use item_core::wire::{ReactorAsk, StartStage};
 use super::reactor::{click_until, use_display};
 
 const DIGITS: [KeyCode; 8] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8];
@@ -227,6 +227,22 @@ pub(super) fn reactor_room_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static 
 
     main_screen_steps(s, shot_step);
 
+    // The start-up stand (#319): from the dark (the F10 'Reactor: cold start'), then after the SCRAM below the same procedure again.
+    s.push(run("reactor room: F10 cold start puts the reactor into the dark", 3.0, |w, c| {
+        if c.t == 0.0 {
+            w.resource_mut::<crate::dev::DevMenu>().cold_reactor = true;
+            return None;
+        }
+        (c.t >= 0.5).then(|| {
+            let n = items(w).reactor.expect("news");
+            check(c, n.start == StartStage::Cold && n.toggles == [false; 3] && n.lever == 0 && !n.power_on, "reactor room: cold: dark, toggles off, lever OFF, reactor off".into());
+            check(c, display_core::reactor_main::face(Some(&n)) == display_core::reactor_main::Face::NoPower, "reactor room: the main screen is dark".into());
+            check(c, n.battery_charge > 0.5, format!("reactor room: the battery kept its charge ({:.2})", n.battery_charge));
+            "cold".into()
+        })
+    }));
+    s.extend(start_procedure(true, shot_step));
+
     // SCRAM: the button answers only with its cover open, and it vents the chamber.
     s.push(run("reactor room: injection runs (manual 60)", 25.0, |w, c| {
         if c.t == 0.0 {
@@ -265,6 +281,9 @@ pub(super) fn reactor_room_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static 
         let share = sim(w).room.reactor().tuning().scram_fill_loss;
         check(c, after < before && (after - before * (1.0 - share)).abs() < before * 0.01, format!("reactor room: the SCRAM cost its share of the fill ({before:.1} -> {after:.1})"));
         check(c, !cover_open(w, "cover_scram"), "reactor room: the machine closed the SCRAM cover".into());
+        let n = items(w).reactor.expect("news");
+        check(c, n.toggles == [false; 3] && n.lever == 0, "reactor room: the SCRAM dropped the three toggles and the START lever".into());
+        check(c, n.start == StartStage::Boot && display_core::reactor_main::face(Some(&n)) == display_core::reactor_main::Face::Boot, "reactor room: the screen stays awake on the BOOT face".into());
         "scrammed".into()
     }));
     s.extend(view("reactor-04-scrammed", [0.0, 1.8, 0.0], shot_step));
@@ -275,6 +294,9 @@ pub(super) fn reactor_room_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static 
         check(c, sim(w).room.reactor().injection() == 0.0, "reactor room: no injection a second later".into());
         Some("off".into())
     }));
+
+    // The restart after the SCRAM: the whole procedure again, under the battery's clock.
+    s.extend(start_procedure(false, shot_step));
 
     // Core eject: only with the cover open.
     s.push(run("reactor room: a pull with the eject cover shut does nothing", 2.0, |w, c| {
@@ -299,6 +321,80 @@ pub(super) fn reactor_room_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static 
     }));
     s.extend(view("reactor-05-ejected", [0.0, 1.2, 0.0], shot_step));
     s.push(wait(1.0));
+}
+
+fn stage(w: &World) -> StartStage {
+    items(w).reactor.map_or(StartStage::Running, |r| r.start)
+}
+
+/// The start-up procedure at the stand through the look-and-F path: a lever without the conditions refuses, three toggles wake the
+/// screens (`cold`: from the dark), PRIME latches and finishes, RUN ignites and the output reaches the demand.
+fn start_procedure(cold: bool, shot_step: &dyn Fn(&'static str) -> Step) -> Vec<Step> {
+    let tag = if cold { "cold start" } else { "restart" };
+    let mut s: Vec<Step> = Vec::new();
+    s.push(run("reactor room: the walker goes to the start-up stand", 2.0, |w, c| {
+        if c.t == 0.0 {
+            stand_at(w, [-2.4, 0.0, 0.0]);
+        }
+        aim(w, "lever_start");
+        (c.t >= 0.5).then(|| "at the stand".into())
+    }));
+    s.push(press("reactor room: the START lever refuses without the toggles", "lever_start", 0.6, move |w, c| {
+        let n = items(w).reactor.expect("news");
+        check(c, n.lever == 0 && n.start != StartStage::Prime, format!("reactor room ({tag}): no toggles, the lever stays OFF"));
+        "refused".into()
+    }));
+    for (i, part) in rr::TOGGLES.into_iter().enumerate() {
+        s.push(press("reactor room: F on a boot toggle", part, 0.4, move |w, c| {
+            let n = items(w).reactor.expect("news");
+            check(c, n.toggles[i], format!("reactor room ({tag}): toggle {} is on", i + 1));
+            if i < 2 {
+                check(c, !(cold && n.start != StartStage::Cold), format!("reactor room ({tag}): still dark with a toggle off"));
+            }
+            "on".into()
+        }));
+    }
+    s.push(run("reactor room: three toggles on wake the screen", 3.0, move |w, c| {
+        (stage(w) == StartStage::Boot).then(|| {
+            let n = items(w).reactor.expect("news");
+            check(c, display_core::reactor_main::face(Some(&n)) == display_core::reactor_main::Face::Boot, format!("reactor room ({tag}): the BOOT face"));
+            "awake".into()
+        })
+    }));
+    s.push(press("reactor room: F on the START lever primes", "lever_start", 0.8, move |w, c| {
+        let n = items(w).reactor.expect("news");
+        check(c, n.lever == 1 && n.start == StartStage::Prime, format!("reactor room ({tag}): PRIME latched (lever {}, {:?})", n.lever, n.start));
+        "prime".into()
+    }));
+    s.push(shot_step(if cold { "reactor-08-prime-lamps" } else { "reactor-10-prime-after-scram" }));
+    s.push(run("reactor room: the trap charges", 20.0, move |w, c| {
+        let n = items(w).reactor.expect("news");
+        (n.trap >= 1.0).then(|| {
+            check(c, !sim(w).room.reactor().power_on(), format!("reactor room ({tag}): no ignition before RUN"));
+            "charged".into()
+        })
+    }));
+    s.push(press("reactor room: F on the START lever runs", "lever_start", 0.8, move |w, c| {
+        let n = items(w).reactor.expect("news");
+        check(c, n.lever == 2 && matches!(n.start, StartStage::RunUp | StartStage::Running) && n.power_on, format!("reactor room ({tag}): RUN ignited ({:?})", n.start));
+        "run".into()
+    }));
+    s.push(run("reactor room: the output reaches the demand", 120.0, move |w, c| {
+        let n = items(w).reactor.expect("news");
+        (n.start == StartStage::Running).then(|| {
+            check(c, n.output_kw >= 0.5 * n.load_kw, format!("reactor room ({tag}): output {:.0} kW of {:.0} kW", n.output_kw, n.load_kw));
+            format!("running, output {:.0} kW", n.output_kw)
+        })
+    }));
+    // Back to the console, where the SCRAM and the eject are.
+    s.push(run("reactor room: the walker goes back to the console", 2.0, |w, c| {
+        if c.t == 0.0 {
+            stand_at(w, [0.0, 0.0, 2.6]);
+        }
+        aim(w, "button_scram");
+        (c.t >= 0.5).then(|| "at the console".into())
+    }));
+    s
 }
 
 /// The main screen (#317): F on it, MANUAL and the injection slider move the sim's set point, AUTO makes the converter slider a

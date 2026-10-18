@@ -14,6 +14,7 @@ pub mod canisters;
 pub mod canister_hum;
 pub mod junction_boxes;
 pub mod reactor_room;
+pub mod start_stand;
 pub mod startup_screen;
 
 pub fn plugin(app: &mut App) {

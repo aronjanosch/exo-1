@@ -8,7 +8,7 @@ use item_core::wire::ReactorNews;
 
 /// Sets a panel; while the ship's master is off (the cold start, r42), every screen but SP-01 shows OFF.
 pub fn show(panels: &mut Panels, r: Option<&ReactorNews>, id: display_core::PanelId, p: Panel) {
-    let live = r.map_or(true, |r| r.startup.live());
+    let live = r.map_or(true, |r| r.startup.live() && r.start != item_core::wire::StartStage::Cold);
     panels.set(id, if live { p } else { off(p) });
 }
 

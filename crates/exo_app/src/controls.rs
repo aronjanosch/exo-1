@@ -110,6 +110,7 @@ pub enum Tap {
     Dev9,
     Dev0,
     DevMinus,
+    DevEquals,
     /// SC model: master mode SCM or NAV. TODO(initiator): the key (B for now).
     MasterMode,
     /// SC model: comstab on or off. TODO(initiator): the key (U for now).
@@ -173,7 +174,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 49] = [
+    pub const ALL: [Tap; 50] = [
         Tap::Help,
         Tap::DevMenu,
         Tap::Dev1,
@@ -187,6 +188,7 @@ impl Tap {
         Tap::Dev9,
         Tap::Dev0,
         Tap::DevMinus,
+        Tap::DevEquals,
         Tap::Interact,
         Tap::Throw,
         Tap::HoverAssist,
@@ -254,6 +256,7 @@ impl Tap {
             Tap::Dev9 => "dev_9",
             Tap::Dev0 => "dev_0",
             Tap::DevMinus => "dev_minus",
+            Tap::DevEquals => "dev_equals",
             Tap::CameraFx => "camera_fx",
             Tap::MasterMode => "master_mode",
             Tap::Comstab => "comstab",
@@ -477,6 +480,7 @@ impl Bindings {
                 (Tap::Dev9, None) => Ok(vec![Input::Key(KeyCode::Digit9)]),
                 (Tap::Dev0, None) => Ok(vec![Input::Key(KeyCode::Digit0)]),
                 (Tap::DevMinus, None) => Ok(vec![Input::Key(KeyCode::Minus)]),
+                (Tap::DevEquals, None) => Ok(vec![Input::Key(KeyCode::Equal)]),
                 (Tap::CameraFx, None) => Ok(vec![Input::Key(KeyCode::F9)]),
                 (Tap::MasterMode, None) => Ok(vec![Input::Key(KeyCode::KeyB)]),
                 (Tap::Comstab, None) => Ok(vec![Input::Key(KeyCode::KeyU)]),

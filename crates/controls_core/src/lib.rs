@@ -251,6 +251,11 @@ impl Controls {
             *rising = *i == 0;
         }
     }
+    pub fn set_toggle(&mut self, id: &str, on: bool) {
+        if let Some(Kind::Toggle { on: o }) = self.parts.get_mut(id).map(|p| &mut p.kind) {
+            *o = on;
+        }
+    }
     pub fn set_slot(&mut self, id: &str, item: Option<ItemId>) {
         if let Some(Kind::Slot { item: i }) = self.parts.get_mut(id).map(|p| &mut p.kind) {
             *i = item;

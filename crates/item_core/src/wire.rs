@@ -21,9 +21,8 @@ pub enum ToHost {
     Rescue(Option<PlayerId>),
     /// The coolant refill hold: the player is refilling at the pump (`true`), or has stopped (`false`).
     Refill(bool),
-    /// The brake: pull a canister into the sender's hands. `None`: the one with the most life (the LMB hold);
-    /// `Some(i)`: the canister of reactor slot `i` (F at a slot, #316), refused when that slot is empty.
-    Pull(Option<u8>),
+    /// The brake: pull the canister of reactor slot `i` into the sender's hands (F at a slot, #316), refused when that slot is empty.
+    Pull(u8),
     /// The station whose screen the sender's active display shows (r43, the bots' occupancy), or `None`
     /// when it shows no station's. Sent when the display changes.
     Using(Option<BotStation>),
@@ -980,7 +979,7 @@ mod tests {
             ReactorAsk::Airlock(AirlockAsk::ToggleInner),
             ReactorAsk::SealAirlock,
         ];
-        for pull in [None, Some(0u8), Some(1)] {
+        for pull in [0u8, 1] {
             assert_eq!(decode::<ToHost>(&encode(&ToHost::Pull(pull))), Some(ToHost::Pull(pull)));
         }
         let load = crate::Request::Load { slot: 2, into: 1 };

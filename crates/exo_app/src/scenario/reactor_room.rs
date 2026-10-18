@@ -37,7 +37,7 @@ pub(super) fn stand_at(w: &mut World, model: [f64; 3]) {
     place_walker(w, feet);
 }
 
-fn aim(w: &mut World, name: &str) {
+pub(super) fn aim(w: &mut World, name: &str) {
     let at = part_at(w, name);
     look_at(w, at);
 }

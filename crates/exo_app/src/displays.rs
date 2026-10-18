@@ -42,6 +42,10 @@ pub struct FramedBy(pub &'static str);
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Bare;
 
+/// A screen to read only: it is never a target of F (no cursor, no use), the reactor's `screen_supply`.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct ReadOnly;
+
 /// How far in front of the model's origin the screen quad stands (m).
 pub const FRAMED_SCREEN_OFFSET: f64 = 0.003;
 

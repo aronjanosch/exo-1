@@ -217,6 +217,7 @@ impl ReactorSim {
             battery_charge: self.room.battery().fraction(),
             battery_recharge: self.room.battery().recharge(),
             battery_kw: self.room.battery().output_kw(),
+            battery_in_kw: self.room.battery().input_kw(),
             director: self.director.enabled(),
             shield: self.room.shield().fraction(),
             quantum_shield: self.room.shield().quantum_up(),

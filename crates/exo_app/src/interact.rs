@@ -145,7 +145,7 @@ pub fn interaction(
     remotes: Query<(&Position, &Rotation), With<crate::ship::RemoteShip>>,
     crates: Query<(Entity, &Crate), Without<LooseItem>>,
     mut gp: ResMut<crate::gameplay::Gameplay>,
-    (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel)>),
+    (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel), Without<crate::displays::ReadOnly>>),
     (time, mut items, loose, door, doors, bridge_door, bridge_doors): (Res<Time>, ResMut<Items>, Query<(Entity, &Crate, &LooseItem)>, Option<Res<EngineDoor>>, Query<&Position, With<Slab>>, Option<Res<BridgeDoor>>, Query<&Position, With<BridgeSlab>>),
     (boxes, supply, airlock_doors, equip_door, equip_doors, mut cw, mut ui, specs, reactor_rooms, junction_rooms): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::fire::extinguisher::Supply>>, Query<(&crate::dev_area::hull::airlock::AirlockSlab, &Position)>, Option<Res<EquipDoor>>, Query<&Position, With<EquipSlab>>, ResMut<crate::container_window::ContainerWindow>, ResMut<crate::items::InventoryUi>, Res<crate::container_window::ContainerSpecs>, Query<(&crate::dev_area::engineering::reactor_room::ReactorRoom, &crate::controls_kit::Machine)>, Query<&crate::dev_area::engineering::junction_boxes::JunctionRoom>),
 ) {

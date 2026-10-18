@@ -58,6 +58,17 @@ fn give_canister(w: &mut World, life: f64) {
     assert!(ok, "the canister fits the bar");
 }
 
+/// The words on the supply screen (`screen_supply`).
+fn supply_words(w: &World) -> Vec<String> {
+    use display_core::{Shape, Widget};
+    let panels = w.resource::<crate::displays::Panels>();
+    let Some(p) = panels.get(&crate::dev_area::engineering::reactor_room::SUPPLY_ID) else { return Vec::new() };
+    p.layout().iter().flat_map(|l| match l.widget {
+        Widget::Canvas { shapes, .. } => shapes.iter().filter_map(|s| if let Shape::Text { text, .. } = s { Some(text.clone()) } else { None }).collect::<Vec<_>>(),
+        _ => Vec::new(),
+    }).collect()
+}
+
 /// Selects the bar slot of a canister (one key tap per tick); true once it is selected.
 fn select_canister(w: &mut World) -> bool {
     let slot = (0..8).find(|&i| items(w).client.view.slot(i).is_some_and(|s| s.item.kind.as_str() == "antimatter_canister")).unwrap_or(0);
@@ -196,6 +207,7 @@ pub(super) fn reactor_room_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static 
         check(c, !seated_in_sim(w, 0) && seated_in_sim(w, 1), "reactor room: slot 1 is empty, slot 2 still holds its canister".into());
         let held = (0..8).filter_map(|i| items(w).client.view.slot(i)).find(|s| s.item.kind.as_str() == "antimatter_canister").and_then(|s| s.item.condition);
         check(c, held.is_some_and(|l| (l - 60.0).abs() < 1.0), format!("reactor room: the hands hold the 60 life canister ({held:?})"));
+        check(c, supply_words(w).iter().any(|t| t == "EMPTY") && supply_words(w).iter().any(|t| t == "SEATED"), format!("reactor room: the supply screen shows slot 1 EMPTY and slot 2 SEATED ({:?})", supply_words(w)));
         "pulled slot 1".into()
     }));
     s.push(run("reactor room: the pulled canister is selected", 3.0, |w, c| (c.t >= 0.3 && select_canister(w)).then(|| "selected".into())));

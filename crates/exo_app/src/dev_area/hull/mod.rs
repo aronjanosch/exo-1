@@ -1,5 +1,5 @@
 //! The hull and life support: the ship's air, the airlock, the inner doors, the hull's sections, the
-//! room alarms and lamps, the vents' valves and the rooms' panels (ER-01, BD-01, the vents, the
+//! room alarms and lamps, and the rooms' panels (ER-01, BD-01, the
 //! airlock's AL-01/02, the status monitor ST-01).
 use crate::dev_area::*;
 use reactor_core::Tuning;

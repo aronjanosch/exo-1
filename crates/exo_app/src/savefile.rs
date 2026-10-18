@@ -257,7 +257,6 @@ mod tests {
         let mut sim = ReactorSim::created(&cfg, true);
         let air = ShipAir::with_tuning(&cfg.airlock);
         sim.room.battery_mut().set_charge_kwmin(2000.0);
-        sim.vents = [false, true, true];
         let sec = engine_section(&sim, &air);
         let mut env = Envelope::new();
         sec.save(&mut env);

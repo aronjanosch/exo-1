@@ -1,5 +1,5 @@
 //! The hull's part of the ship tick on the host: its asks (the airlock's presses, the captain's
-//! SEAL, the vents' valves, SILENCE), the air the oxygen generator and the breaches move, the
+//! SEAL, SILENCE), the air the oxygen generator and the breaches move, the
 //! ship's alarm, and the hull's part of the news (the rooms' air and fire, the airlock, the alarms).
 use crate::dev_area::*;
 use crate::dev_area::fire::{FireAlarm, FireGrid, FireModel};
@@ -20,7 +20,7 @@ pub fn plugin(app: &mut App) {
 }
 
 fn is_mine(a: &ReactorAsk) -> bool {
-    matches!(a, ReactorAsk::Airlock(_) | ReactorAsk::SealAirlock | ReactorAsk::SetVent(..) | ReactorAsk::SilenceAlarms)
+    matches!(a, ReactorAsk::Airlock(_) | ReactorAsk::SealAirlock | ReactorAsk::SilenceAlarms)
 }
 
 fn asks(mut items: ResMut<Items>, mut sim: ResMut<ReactorSim>, mut air: ResMut<ShipAir>) {
@@ -45,20 +45,16 @@ fn asks(mut items: ResMut<Items>, mut sim: ResMut<ReactorSim>, mut air: ResMut<S
     }
 }
 
-/// The hull's asks that the room's switches keep (the vents' valves, SILENCE); false for any other.
+/// The hull's asks that the room's switches keep (SILENCE); false for any other.
 pub fn apply_sim(s: &mut ReactorSim, a: ReactorAsk) -> bool {
     match a {
-        ReactorAsk::SetVent(i, open) => match s.vents.get_mut(i as usize) {
-            Some(v) => *v = open,
-            None => info!("hull: no vent {i}"),
-        },
         ReactorAsk::SilenceAlarms => s.alarms.iter_mut().for_each(RoomAlarm::silence),
         _ => return false,
     }
     true
 }
 
-/// Host: the oxygen generator feeds the air through its vents (r38, `ShipAir::add_oxygen_through_vents`;
+/// Host: the oxygen generator feeds the air through its vents, all open (r38, `ShipAir::add_oxygen_through_vents`;
 /// `EngineRoom::oxygen_flow` is the life support's power and the generator's condition squared), and
 /// each hull section's hole leaks the room's air to space at its openness (r37, by section in r40).
 fn air_step(time: Res<Time>, items: Res<Items>, cfg: Res<ReactorConfig>, sim: Res<ReactorSim>, mut air: ResMut<ShipAir>) {
@@ -67,7 +63,7 @@ fn air_step(time: Res<Time>, items: Res<Items>, cfg: Res<ReactorConfig>, sim: Re
     }
     let dt = time.delta_secs_f64();
     let o2 = sim.room.oxygen_flow(cfg.0.life_support.oxygen_generator_rate);
-    air.add_oxygen_through_vents(o2 * dt, sim.vents);
+    air.add_oxygen_through_vents(o2 * dt, [true; 3]);
     let holes = air.breaches;
     for (i, hole) in holes.into_iter().enumerate() {
         air.deck.set_leak(hole, cfg.0.hull.breach_area_m2, sim.room.hull().open(i));

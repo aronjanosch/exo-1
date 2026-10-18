@@ -131,12 +131,11 @@ pub const MONITOR_AT: [f64; 2] = [-9.04, -16.9];
 
 /// The bridge's wall points (panels sit 0.04 m inside their wall's face): the helm on the north wall
 /// (the ship's front), the jump drive and the shield on the west wall, the captain's console CP-01
-/// on the east wall, the bridge's vent on the north wall.
+/// on the east wall.
 pub const HELM_AT: [f64; 2] = [BRIDGE.centre[0], BRIDGE.centre[1] + BRIDGE.half[1] - 0.04];
 pub const JUMP_AT: [f64; 2] = [BRIDGE.centre[0] - BRIDGE.half[0] + 0.04, -3.4];
 pub const SHIELD_AT: [f64; 2] = [BRIDGE.centre[0] - BRIDGE.half[0] + 0.04, -5.4];
 pub const CAPTAIN_AT: [f64; 2] = [BRIDGE.centre[0] + BRIDGE.half[0] - 0.04, BRIDGE.centre[1]];
-pub const BRIDGE_VENT_AT: [f64; 2] = [-17.5, BRIDGE.centre[1] + BRIDGE.half[1] - 0.04];
 /// The gun's screen GN-01 on the turret room's north wall.
 pub const GUNNERY_AT: [f64; 2] = [TURRET_ROOM.centre[0], TURRET_ROOM.centre[1] + TURRET_ROOM.half[1] - 0.04];
 /// The corridor's wall points: the faces are y -10.66 (south wall, facing north) and y -8.74
@@ -152,8 +151,6 @@ pub const AIRLOCK_PANEL_AT: [[f64; 2]; 3] = [[11.2, -8.7], [12.0, -8.4], [9.9, -
 pub const AIRLOCK_SCREEN_SIZE: [f64; 2] = [0.20, 0.32];
 pub const AIRLOCK_PANEL_CENTRE: f64 = 1.4;
 pub const AIRLOCK_PANEL_MODEL: &str = "ship/airlock_wall_panel.glb";
-/// The vents' wall points: the engine room's west wall and the corridor's south wall.
-pub const VENT_AT: [[f64; 2]; 2] = [[-18.9, -14.0], [1.5, -10.66]];
 pub const VENT_LIFT: f64 = 1.3;
 
 pub struct Mount {
@@ -170,20 +167,16 @@ use crate::dev_area::hull::panels as hull_panels;
 
 /// The wall screens. A screen's turn is the way it faces: 0 south, 90 east, 180 north, -90 west.
 pub const SCREENS: &[Mount] = &[
-    // The engine room: the pump's screen on the pump, the engine room's vent on the west wall. The reactor's own screens
+    // The engine room: the pump's screen on the pump, The reactor's own screens
     // are part of its model (`engineering::reactor_room`). Parked (#306 Parkplatz): AUX, the battery and ST-01.
     Mount { id: engineering_panels::PUMP_ID, name: engineering_panels::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: hull_panels::VENT_ENGINE_ID, name: hull_panels::VENT_ENGINE_NAME, at: VENT_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
-    // The corridor: ER-01 and the corridor's vent on the south wall, BD-01 on the north wall. The
+    // The corridor: ER-01 on the south wall, BD-01 on the north wall. The
     // airlock's panels (#309): one inside on the north wall, one outside beside the outer door.
     Mount { id: hull_panels::DOOR_ID, name: hull_panels::DOOR_NAME, at: ENGINE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: hull_panels::VENT_CORRIDOR_ID, name: hull_panels::VENT_CORRIDOR_NAME, at: VENT_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: hull_panels::BRIDGE_DOOR_ID, name: hull_panels::BRIDGE_DOOR_NAME, at: BRIDGE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     Mount { id: hull_panels::AIRLOCK_IN_ID, name: hull_panels::AIRLOCK_IN_NAME, at: AIRLOCK_PANEL_AT[0], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 0.0 },
     Mount { id: hull_panels::AIRLOCK_OUT_ID, name: hull_panels::AIRLOCK_OUT_NAME, at: AIRLOCK_PANEL_AT[1], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 180.0 },
     Mount { id: hull_panels::AIRLOCK_SHIP_ID, name: hull_panels::AIRLOCK_SHIP_NAME, at: AIRLOCK_PANEL_AT[2], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 270.0 },
-    // The bridge: only its vent. Parked (#306 Parkplatz): the helm, JD-01, the shield and CP-01.
-    Mount { id: hull_panels::VENT_BRIDGE_ID, name: hull_panels::VENT_BRIDGE_NAME, at: BRIDGE_VENT_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     // The turret room: empty. Parked (#306 Parkplatz): GN-01 and the gun's housing (`TURRET_GUN`).
 ];
 

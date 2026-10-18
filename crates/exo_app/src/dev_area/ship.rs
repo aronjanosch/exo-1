@@ -46,9 +46,6 @@ pub struct ReactorSim {
     pub alarmed: bool,
     pub sent: Option<ReactorNews>,
     pub since_send: f64,
-    /// The three vents' valves (r38, r44; index 0 the engine room's, 1 the corridor's, 2 the bridge's).
-    /// The host keeps them; a new room starts with all open.
-    pub vents: [bool; ROOMS],
     /// The incident director (r38): the host steps it in `reactor_step`; the toggle sets it.
     pub director: Director,
     /// The rooms' alarms (r40, #165), by the index of `ReactorNews::rooms`: the engine room, the corridor,
@@ -63,14 +60,13 @@ pub struct ReactorSim {
 /// The engine room's save section (r42, #128) from the host's state: the room, its air, and the
 /// switches the host keeps beside the room.
 pub fn engine_section(sim: &ReactorSim, air: &ShipAir) -> EngineSave {
-    EngineSave { room: sim.room.to_save(), air: air.to_save(), vents: sim.vents, manual: sim.manual, injection: sim.injection, converter: sim.converter, director: sim.director.to_save() }
+    EngineSave { room: sim.room.to_save(), air: air.to_save(), vents: [true; ROOMS], manual: sim.manual, injection: sim.injection, converter: sim.converter, director: sim.director.to_save() }
 }
 
 /// Puts a loaded section into the room, the air and the switches. The alarms and the timers are not
 /// in the save: they keep their values.
 pub fn apply_engine_section(sec: &EngineSave, cfg: &Tuning, sim: &mut ReactorSim, air: &mut ShipAir) {
     sim.room = EngineRoom::from_save(cfg, &sec.room);
-    sim.vents = sec.vents;
     sim.manual = sec.manual;
     sim.injection = sec.injection;
     sim.converter = sec.converter;
@@ -108,7 +104,7 @@ impl ReactorSim {
         let start = room.battery().tuning().start_charge.clamp(0.0, 1.0);
         room.battery_mut().set_charge_kwmin(cap * start);
         room.battery_mut().set_recharge(1.0);
-        ReactorSim { room, manual: false, injection: 0.0, converter: 0.0, alarmed: false, sent: None, since_send: f64::MAX, vents: [true; ROOMS], director: Director::new(&cfg.director, SEED), alarms: [RoomAlarm::new(cfg.alarm); ROOMS], clearing: false, bots: Bots::new(&cfg.bots) }
+        ReactorSim { room, manual: false, injection: 0.0, converter: 0.0, alarmed: false, sent: None, since_send: f64::MAX, director: Director::new(&cfg.director, SEED), alarms: [RoomAlarm::new(cfg.alarm); ROOMS], clearing: false, bots: Bots::new(&cfg.bots) }
     }
 
     /// The CLEAR JAM hold's time (r41): while it is on, the gun's jam clears after its hold.
@@ -204,7 +200,8 @@ impl ReactorSim {
             rooms: Default::default(),
             // The host sets the alarms in `reactor_step` too (r40).
             alarms: Default::default(),
-            vents: self.vents,
+            // The player-facing vents are gone: every vent stays open (the wire still carries the field).
+            vents: [true; ROOMS],
             throttle: self.room.engine_throttle(),
             engine_thrust: self.room.engine_thrust(),
             graph_points: self.room.history().size().min(GRAPH_POINTS) as u8,
@@ -896,25 +893,6 @@ mod tests {
         assert_eq!(s.news(1.0).throttle, -35.0);
         apply_any(&mut s, ReactorAsk::SetThrottle(400.0), &cfg(), &mut k);
         assert_eq!(s.news(1.0).throttle, 100.0, "clamped");
-    }
-
-    /// r38: each vent is a valve the host keeps; a bad index is ignored and the news carries both.
-    #[test]
-    fn the_vent_asks_set_the_valves_and_the_news_carry_them() {
-        let mut s = ReactorSim::new(&cfg());
-        let mut k = ReactorCounts::default();
-        assert_eq!(s.news(1.0).vents, [true, true, true], "all open at the start");
-        apply_any(&mut s, ReactorAsk::SetVent(0, false), &cfg(), &mut k);
-        assert_eq!(s.news(1.0).vents, [false, true, true]);
-        apply_any(&mut s, ReactorAsk::SetVent(1, false), &cfg(), &mut k);
-        apply_any(&mut s, ReactorAsk::SetVent(2, false), &cfg(), &mut k);
-        assert_eq!(s.news(1.0).vents, [false, false, false], "all shut is a state too");
-        apply_any(&mut s, ReactorAsk::SetVent(3, true), &cfg(), &mut k);
-        assert_eq!(s.news(1.0).vents, [false, false, false], "no fourth vent");
-        apply_any(&mut s, ReactorAsk::SetVent(2, true), &cfg(), &mut k);
-        assert_eq!(s.news(1.0).vents, [false, false, true], "the bridge's vent (r44)");
-        apply_any(&mut s, ReactorAsk::SetVent(1, true), &cfg(), &mut k);
-        assert_eq!(s.news(1.0).vents, [false, true, true]);
     }
 
     #[test]

@@ -7,6 +7,7 @@
 //! Per-type values live in `content/ship/<type>/sc_*.json` (tuned by playtest).
 pub mod air;
 pub mod angular;
+mod budget;
 pub mod drive;
 pub mod linear;
 pub mod modes;
@@ -76,7 +77,7 @@ pub struct ScStatus {
     pub landing: bool,
     pub wind_comp: bool,
     pub master: Master,
-    /// Speed limiter as a share of the cap, 1 = off.
+    /// Share of the speed cap; also scales manual translation thrust while decoupled.
     pub limiter: f64,
     /// m/s: the speed cap that holds right now (master mode, boost, limiter, air, landing).
     pub cap: f64,
@@ -233,7 +234,7 @@ impl ScShip {
         let air = air::step(&mut self.air, &f, &self.modes, &self.tuning.air);
         let thrust_box = self.thrust_box(air.thrust_scale, if braking { 1.0 } else { boost });
         let linear_env = linear::Env { thrust_box, boost, braking, air_accel: air.accel, passive_drag: air.passive_drag, cap_scale: air.cap_scale, drift: if self.modes.wind_comp { DVec3::ZERO } else { air.wind } };
-        let lin = linear::step(&mut self.linear, &f, input, &self.modes, &linear_env, &self.tuning.linear);
+        let mut lin = linear::step(&mut self.linear, &f, input, &self.modes, &linear_env, &self.tuning.linear);
         let turn_box = linear::motion_box(&f, &self.modes, &linear_env, &self.tuning.linear);
         let torque_box = self.torque_box();
         let level = braking && f.v.length() < self.tuning.angular.brake_level_below && f.gravity.length_squared() > 1e-6;
@@ -241,9 +242,25 @@ impl ScShip {
         if self.tuning.linear.boost_disables_g_safe && boost > 0.0 {
             angular_modes.g_safe = false;
         }
-        let ang = angular::step(&mut self.angular, &f, input, &angular_modes, &angular::Env { accel_box: torque_box, boost, cap: lin.cap, thrust_box: turn_box, linear_hold: lin.turn_reserve, air_hold: air.angular_hold, level }, &self.tuning.angular);
+        let shared = self.modes.coupled && !braking;
+        let ang = angular::step(&mut self.angular, &f, input, &angular_modes, &angular::Env { accel_box: torque_box, boost, cap: lin.cap, thrust_box: turn_box, linear_hold: lin.hold,
+            priority: shared.then_some(lin.priority), air_hold: air.angular_hold, level }, &self.tuning.angular);
+        let shaped_angular = drive::shape_angular(&mut self.drive, ang.accel, &self.tuning.drive, dt);
+        if shared {
+            let budget = budget::Budget { axes: turn_box, g_safe: angular_modes.g_safe };
+            let current = DVec3::new(f.w_local.x, f.w_local.y, 0.0);
+            // Budget the turn this tick's torque can actually deliver, not an
+            // instantaneous jump to the pilot's target rate.
+            let next = f.w_local + (shaped_angular + air.angular + air.angular_hold) * dt;
+            let next = DVec3::new(next.x, next.y, 0.0);
+            let requested = lin.priority + (next - current).cross(f.lv) * self.modes.coupling;
+            let priority = budget.limit(requested);
+            lin.accel = budget.add(priority, lin.secondary);
+            lin.saturated |= (requested + lin.secondary - lin.accel).length() > 1e-6;
+        }
         let stick = if braking { DVec3::ZERO } else { limit_length(input.thrust, 1.0) };
-        let mut shaped = drive::shape(&mut self.drive, &drive::Asked { linear: lin.accel, angular: ang.accel, boost, thrust_box, velocity: f.lv, stick }, &self.tuning.drive, dt);
+        let linear = drive::shape_linear(&mut self.drive, &drive::Asked { linear: lin.accel, angular: ang.accel, boost, thrust_box, velocity: f.lv, stick }, &self.tuning.drive, dt);
+        let mut shaped = drive::Given { linear, angular: shaped_angular };
         if self.modes.g_safe && !(self.tuning.linear.boost_disables_g_safe && boost > 0.0 && !braking) {
             // A safety toggle must also constrain residual spool/jerk output immediately.
             shaped.linear = limit_length(shaped.linear, G_SAFE_MAX_G * G0);

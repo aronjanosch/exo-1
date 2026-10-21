@@ -114,8 +114,34 @@ fn acceleration_stays_inside_the_box() {
         dt: DT,
     };
     let input = FlightInput { turn: DVec2::new(-1.0, 1.0), roll: -1.0, piloted: true, ..Default::default() };
-    let env = Env { accel_box: flight_core::limits::Rot { pitch: 0.5, yaw: 0.25, roll: 0.75 }, boost: 0.0, cap: 150.0, thrust_box: flight_core::limits::Dirs::splat(1e6), linear_hold: DVec3::ZERO, air_hold: DVec3::ZERO, level: false };
+    let env = Env { accel_box: flight_core::limits::Rot { pitch: 0.5, yaw: 0.25, roll: 0.75 }, boost: 0.0, cap: 150.0, thrust_box: flight_core::limits::Dirs::splat(1e6), linear_hold: DVec3::ZERO, priority: None, air_hold: DVec3::ZERO, level: false };
     let out = angular::step(&mut AngularState::default(), &f, &input, &Modes::default(), &env, &t);
     eprintln!("box: accel {:?} inside (0.5, 0.25, 0.75)", out.accel);
     assert!(out.accel.x.abs() <= 0.5 && out.accel.y.abs() <= 0.25 && out.accel.z.abs() <= 0.75);
+}
+
+#[test]
+fn shared_turn_allocation_retains_the_absolute_axis_and_total_g_limits() {
+    use flight_core::limits::{Dirs, G0, G_SAFE_MAX_G, Rot};
+    let t = tuning().angular;
+    let axes = Dirs { left: 25.0, right: 30.0, up: 35.0, down: 20.0, forward: 60.0, backward: 40.0 };
+    for g_safe in [false, true] {
+        for velocity in [DVec3::NEG_Z * 100.0, DVec3::new(30.0, -20.0, -90.0)] {
+            for hold in [DVec3::ZERO, DVec3::Y * G0, DVec3::new(-5.0, 5.0, 4.0)] {
+                for spin in [-0.2, 0.2] {
+                    let body = BodyState { lin_vel: velocity, ang_vel: DVec3::new(spin, -spin, 0.0), ..body_at(DVec3::Y * 10000.0) };
+                    let f = StepState::new(&body, &Space::default(), DT);
+                    let e = Env { accel_box: Rot { pitch: 10.0, yaw: 10.0, roll: 10.0 }, boost: 0.0, cap: 150.0,
+                        thrust_box: axes, linear_hold: hold, priority: Some(DVec3::new(3.0, 3.0, -10.0)), air_hold: DVec3::ZERO, level: false };
+                    let out = angular::step(&mut AngularState::default(), &f, &stick(-1.0, 1.0, 0.0), &Modes { g_safe, ..Default::default() }, &e, &t);
+                    let required = hold + DVec3::new(out.rate.x, out.rate.y, 0.0).cross(velocity);
+                    let limit = if g_safe { axes.min(&t.g_limit.scaled(G0)) } else { axes };
+                    assert!((limit.clamp(required) - required).length() < 1e-8, "turn left axis budget: {required:?}");
+                    if g_safe {
+                        assert!(required.length() <= G_SAFE_MAX_G * G0 + 1e-8, "turn exceeded total G-safe: {required:?}");
+                    }
+                }
+            }
+        }
+    }
 }

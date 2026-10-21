@@ -606,6 +606,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "foreign_warp" => foreign_warp_steps(&mut s),
         "figure" => figure_steps(&mut s, &shot_step),
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
+        "coupled-loop" => coupled_loop_steps(&mut s),
         "first-person-settings" => first_person_settings::steps(&mut s),
         "boost-hud" => boost::boost_hud_steps(&mut s),
         "help" => help::help_steps(&mut s),
@@ -768,9 +769,9 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
 }
 
 /// Scenarios written for the direct mouse (`aim`, the net bot's turn: pixels at 0.002 rad) keep
-/// it; `flight` uses the shipped default, the virtual joystick.
+/// it; the flight and coupled-loop checks use the shipped virtual joystick.
 pub fn uses_direct_mouse(name: &str) -> bool {
-    name != "flight"
+    !matches!(name, "flight" | "coupled-loop")
 }
 
 pub fn run_script(w: &mut World) {

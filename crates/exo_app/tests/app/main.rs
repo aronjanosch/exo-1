@@ -10,6 +10,7 @@ mod scenario_camera_g;
 mod scenario_coolant;
 mod scenario_canisters;
 mod scenario_reactor_room;
+mod scenario_coupled_loop;
 mod scenario_blast;
 mod scenario_container;
 mod scenario_equipment;

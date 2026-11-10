@@ -27,6 +27,10 @@ pub struct GameOver {
     pub left: f64,
 }
 
+/// The implosions aboard the host has counted so far, for `game_over_step`.
+#[derive(Resource, Default)]
+struct ImplosionsSeen(Option<u32>);
+
 pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, game_over_step.after(crate::health::health_step));
 }
@@ -39,6 +43,15 @@ pub fn window_plugin(app: &mut App) {
 /// Host: a wiped crew starts the screen and tells the clients. Client: the host's word starts it.
 /// Then the countdown; at its end the host loads the save (`finish`).
 fn game_over_step(world: &mut World) {
+    // An implosion aboard ends the game for everyone (#325): the host sees the count go up. An ejected core's implosion
+    // outside is `core_implosions`, not this one. The first look only sets the baseline (a reset or a load changes the count).
+    let aboard = world.get_resource::<crate::dev_area::ship::ReactorCounts>().map(|c| c.implosions);
+    let went_up = {
+        let mut seen = world.get_resource_or_insert_with(ImplosionsSeen::default);
+        let up = matches!((seen.0, aboard), (Some(a), Some(b)) if b > a);
+        seen.0 = aboard;
+        up
+    };
     let dt = world.resource::<Time>().delta_secs_f64();
     if world.resource::<Items>().role == Role::Client {
         let told = std::mem::take(&mut world.resource_mut::<Items>().game_over_seen);
@@ -50,6 +63,12 @@ fn game_over_step(world: &mut World) {
     }
     if world.contains_resource::<GameOver>() {
         count_down(world, dt, true);
+        return;
+    }
+    if went_up {
+        world.insert_resource(GameOver { left: SCREEN_S });
+        world.resource_mut::<Items>().send_game_over();
+        info!("game over: the core imploded aboard");
         return;
     }
     let wiped = world.get_resource::<HealthState>().is_some_and(|st| health_core::crew_wiped(st.bodies.values().map(|b| b.health.state())));

@@ -465,6 +465,7 @@ fn container_input(
     specs: Res<ContainerSpecs>,
     players: Query<&Player>,
     boxes: Query<(&DevBox, &Position)>,
+    tubs: Res<crate::ore_tub::TubSpots>,
 ) {
     let now = time.elapsed_secs_f64();
     let rack = cw.rack;
@@ -480,7 +481,9 @@ fn container_input(
         let refused = cw.open_seq.is_some_and(|s| items.client.rejected.iter().any(|(r, _)| *r == s));
         let taken = items.client.holder(rack).is_some_and(|p| p != items.me());
         let gone = !items.client.racks.contains_key(&rack);
-        let far = specs.get(rack).and_then(|s| boxes.iter().find(|(b, _)| b.id == s.box_id)).zip(players.single().ok()).is_some_and(|((_, at), pl)| pl.world_pos(Frame::IDENTITY).distance(at.0) > REACH);
+        // A box stands; an ore tub (#327) is where its crate is now.
+        let at = specs.get(rack).and_then(|s| boxes.iter().find(|(b, _)| b.id == s.box_id)).map(|(_, p)| p.0).or_else(|| tubs.standing(rack));
+        let far = at.zip(players.single().ok()).is_some_and(|(at, pl)| pl.world_pos(Frame::IDENTITY).distance(at) > REACH);
         if refused || taken || gone {
             cw.shut(&mut ui);
             return;

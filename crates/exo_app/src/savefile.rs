@@ -139,6 +139,9 @@ pub fn save_now(world: &mut World) -> Result<(), String> {
     if let (Some(sim), Some(air)) = (world.get_resource::<ReactorSim>(), world.get_resource::<ShipAir>()) {
         engine_section(sim, air).save(&mut env);
     }
+    if let Some(items) = world.get_resource::<crate::items::Items>() {
+        crate::ore_tub::save_section(items, &mut env);
+    }
     let dir = world.resource::<SaveDir>().0.clone();
     write_slot(&dir, SLOT, &env.to_json()).map_err(|e| format!("save: {}: {e}", dir.display()))?;
     world.resource_mut::<Gameplay>().save_wanted = false;
@@ -178,6 +181,7 @@ fn apply_pending_load(world: &mut World) {
 pub fn load(world: &mut World, env: &Envelope) -> Result<(), SaveError> {
     // Read first: a refused section changes nothing. No section (an older save) keeps the start state.
     let engine = EngineSave::load(env)?;
+    let tubs = crate::ore_tub::read_section(env)?;
     let saved = WorldSave::load(env)?.unwrap_or_default();
     world.resource_mut::<Gameplay>().restore(env, saved.next_crate)?;
     if let (Some(sec), Some(cfg)) = (engine, world.get_resource::<ReactorConfig>().map(|c| c.0.clone())) {
@@ -186,6 +190,10 @@ pub fn load(world: &mut World, env: &Envelope) -> Result<(), SaveError> {
                 world.resource_scope(|_, mut air: bevy::ecs::change_detection::Mut<ShipAir>| apply_engine_section(&sec, &cfg, &mut sim, &mut air));
             });
         }
+    }
+    let now = world.resource::<Time>().elapsed_secs_f64();
+    if let Some(mut items) = world.get_resource_mut::<crate::items::Items>() {
+        crate::ore_tub::apply_section(&mut items, now, tubs);
     }
     let old: Vec<Entity> = world.query_filtered::<Entity, With<Goods>>().iter(world).collect();
     for e in old {

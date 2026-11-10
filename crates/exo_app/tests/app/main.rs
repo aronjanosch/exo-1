@@ -27,6 +27,7 @@ mod scenario_dev_area;
 mod scenario_items;
 mod scenario_dev_menu;
 mod scenario_dig;
+mod scenario_ore_tub;
 mod scenario_first_person_settings;
 mod scenario_help;
 mod scenario_engine_room;

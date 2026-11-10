@@ -147,7 +147,7 @@ pub fn interaction(
     mut gp: ResMut<crate::gameplay::Gameplay>,
     (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel), Without<crate::displays::ReadOnly>>),
     (time, mut items, loose, door, doors, bridge_door, bridge_doors): (Res<Time>, ResMut<Items>, Query<(Entity, &Crate, &LooseItem)>, Option<Res<EngineDoor>>, Query<&Position, With<Slab>>, Option<Res<BridgeDoor>>, Query<&BridgeSlab>),
-    (boxes, supply, airlock_doors, equip_door, equip_doors, mut cw, mut ui, specs, reactor_rooms, junction_rooms): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::fire::extinguisher::Supply>>, Query<(&crate::dev_area::hull::airlock::AirlockSlab, &Position)>, Option<Res<EquipDoor>>, Query<&Position, With<EquipSlab>>, ResMut<crate::container_window::ContainerWindow>, ResMut<crate::items::InventoryUi>, Res<crate::container_window::ContainerSpecs>, Query<(&crate::dev_area::engineering::reactor_room::ReactorRoom, &crate::controls_kit::Machine)>, Query<&crate::dev_area::engineering::junction_boxes::JunctionRoom>),
+    (boxes, supply, airlock_doors, equip_door, equip_doors, mut cw, mut ui, specs, reactor_rooms, junction_rooms, tubs): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::fire::extinguisher::Supply>>, Query<(&crate::dev_area::hull::airlock::AirlockSlab, &Position)>, Option<Res<EquipDoor>>, Query<&Position, With<EquipSlab>>, ResMut<crate::container_window::ContainerWindow>, ResMut<crate::items::InventoryUi>, Res<crate::container_window::ContainerSpecs>, Query<(&crate::dev_area::engineering::reactor_room::ReactorRoom, &crate::controls_kit::Machine)>, Query<&crate::dev_area::engineering::junction_boxes::JunctionRoom>, Res<crate::ore_tub::TubSpots>),
 ) {
     let Ok(mut pl) = players.single_mut() else { return };
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };
@@ -186,7 +186,8 @@ pub fn interaction(
         }
     }
     let panel_offer = if on_foot && grab.held.is_none() { gp.panel_offer() } else { None };
-    let container_pos = |rack: item_core::RackId| specs.get(rack).and_then(|s| boxes.iter().find(|(b, _)| b.id == s.box_id)).map(|(_, p)| p.0);
+    // A container stands in a box, or is an ore tub that stands (#327): a carried one has no place to open at.
+    let container_pos = |rack: item_core::RackId| specs.get(rack).and_then(|s| boxes.iter().find(|(b, _)| b.id == s.box_id)).map(|(_, p)| p.0).or_else(|| tubs.standing(rack));
     let target = if let Some(rack) = cw.rack {
         // The window is open: F closes it, wherever the walker looks.
         Some(Target::Container { rack, by: None })
@@ -209,7 +210,8 @@ pub fn interaction(
         let mut panel_pick = None;
         let mut item_target = None;
         let mut item_angle = None;
-        for (e, c) in crates.iter().filter(|_| own_frame) {
+        // An ore tub is opened with F and carried with its own key: it is no crate target here.
+        for (e, c) in crates.iter().filter(|(e, _)| own_frame && !tubs.is_tub(*e)) {
             let (centre, _) = crate_world(c, &frame);
             let Some(dist) = in_cone(eye, look, centre, half, cfg.tool_max_range) else { continue };
             let angle = (centre - eye).angle_between(look);
@@ -282,7 +284,7 @@ pub fn interaction(
             None => {
                 let rack_pick = pl.ship.is_none().then(|| supply.as_ref().and_then(|sup| boxes.iter().find_map(|(b, p)| sup.0.rack_in(&b.id).filter(|_| in_cone(eye, look, p.0, half, USE_RANGE).is_some()).map(Target::Rack)))).flatten();
                 // Lockers stand side by side (#311): of the containers in the cone the one nearest the view's centre wins.
-                let container_pick = pl.ship.is_none().then(|| specs.0.iter().filter_map(|s| boxes.iter().find(|(b, p)| b.id == s.box_id && in_cone(eye, look, p.0, half, USE_RANGE).is_some()).map(|(_, p)| ((p.0 - eye).angle_between(look), s))).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, s)| Target::Container { rack: s.rack, by: items.client.holder(s.rack).filter(|p| *p != items.me()) })).flatten();
+                let container_pick = pl.ship.is_none().then(|| specs.0.iter().filter_map(|s| container_pos(s.rack).filter(|p| in_cone(eye, look, *p, half, USE_RANGE).is_some()).map(|p| ((p - eye).angle_between(look), s))).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, s)| Target::Container { rack: s.rack, by: items.client.holder(s.rack).filter(|p| *p != items.me()) })).flatten();
                 reactor_pick.or(junction_pick).or(item_target.map(Target::Item)).or(panel_pick.map(Target::Panel)).or(door_pick).or(bridge_pick).or(equip_pick).or(airlock_pick).or(rack_pick).or(container_pick)
             }
         }
@@ -353,6 +355,9 @@ pub fn interaction(
                     p.push_str(&specs.get(*rack).map(|s| s.name.clone()).unwrap_or_default());
                     if let Some(by) = by {
                         p.push_str(&format!("  (in use: player {by})"));
+                    }
+                    if crate::ore_tub::TUB_RACKS.contains(rack) {
+                        p.push_str(&key_hint(&bindings, Tap::Carry, "carry"));
                     }
                 }
                 Target::LeavePanel(e) => {
@@ -437,6 +442,8 @@ pub fn interaction(
                     set("Open", specs.get(*rack).map(|s| s.name.clone()).unwrap_or_default());
                     if let Some(by) = by {
                         note = (format!("IN USE · PLAYER {by}"), Tone::Warn);
+                    } else if crate::ore_tub::TUB_RACKS.contains(rack) {
+                        note = (format!("{} carry", key_cap(&bindings, Tap::Carry)), Tone::Normal);
                     }
                 }
                 Target::Counter(g) => set("Talk to", gp.jobs_content.givers.get(g).map(|g| gp.text(&g.record.name)).unwrap_or_default()),
@@ -474,6 +481,33 @@ pub fn interaction(
         }
     };
 
+    // The carry key takes the ore tub in view in both hands (F opens it, #327).
+    if actions.take_tap(Tap::Carry) {
+        if on_foot && own_frame && grab.held.is_none() && cw.rack.is_none() {
+            let f = if pl.ship.is_some() { cabin } else { Frame::IDENTITY };
+            let eye = pl.world_pos(f) + pl.world_up(f) * EYE_HEIGHT;
+            let look = pl.world_look(f);
+            let half = cfg.cone_half_angle_deg.to_radians();
+            let pick = crates
+                .iter()
+                .filter(|(e, _)| tubs.is_tub(*e))
+                .filter_map(|(e, c)| {
+                    let (centre, _) = crate_world(c, &frame);
+                    let dist = in_cone(eye, look, centre, half, cfg.tool_max_range)?;
+                    (dist - c.body.half.max_element() <= cfg.hand_range).then(|| ((centre - eye).angle_between(look), e))
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0));
+            if let Some((_, e)) = pick.filter(|(_, e)| hands_free(&items, &crates, &table, *e)) {
+                if let Ok((_, c)) = crates.get(e) {
+                    let f = if pl.ship.is_some() { frame } else { Frame::IDENTITY };
+                    let eye = pl.world_pos(f) + pl.world_up(f) * EYE_HEIGHT;
+                    let fwd = f.rot * pl.w.forward;
+                    grab.start(cfg, e, c, &table.0.sizes[c.size], Reach::Hands, eye, fwd, &frame);
+                }
+            }
+        }
+        return;
+    }
     if !actions.take_tap(Tap::Interact) {
         return;
     }

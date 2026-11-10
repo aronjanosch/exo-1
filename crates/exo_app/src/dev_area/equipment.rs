@@ -22,7 +22,7 @@ pub const PAD_LOCKERS: usize = 2;
 pub const ALL_SUIT_LOCKERS: usize = SUIT_LOCKERS + PAD_LOCKERS;
 pub const EQUIPMENT_LOCKERS: usize = 2;
 /// Rack ids: the suit lockers 201..205 (pad zone 206..207), their canister boxes 211..215 (216..217),
-/// the equipment lockers 221..222 (storage keeps 101..103).
+/// the equipment lockers 221..222 (storage keeps 101..105).
 pub const SUIT_RACK: RackId = 200;
 pub const BOX_RACK: RackId = 210;
 pub const LOCKER_RACK: RackId = 220;

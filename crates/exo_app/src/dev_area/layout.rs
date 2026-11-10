@@ -20,6 +20,10 @@ pub const BRIDGE: Zone = Zone { name: "bridge", centre: [-15.0, -4.4], half: [4.
 pub const TURRET_ROOM: Zone = Zone { name: "turret room", centre: [-7.7, -4.4], half: [3.0, 3.0] };
 pub const LAB_ROOM: Zone = Zone { name: "lab room", centre: [-0.4, -4.4], half: [4.0, 3.0] };
 pub const MEDBAY_ROOM: Zone = Zone { name: "medbay room", centre: [-5.7, -13.85], half: [3.0, 2.85] };
+/// The storage room (#312): south of the corridor's east part, between the medbay's east wall (x -2.55, which is its west
+/// wall) and the equipment room; a 1.6 m doorway without a door in the corridor's south wall (x -0.2..1.4).
+/// TODO(initiator): size (start value).
+pub const STORAGE_ROOM: Zone = Zone { name: "storage room", centre: [0.6, -13.5], half: [3.0, 2.5] };
 /// The equipment room (#309, #311): 6 x 4 m at the corridor's east end, between the corridor (a
 /// sliding door) and the airlock's inner door; its north wall lines up with the corridor's.
 /// TODO(initiator): size (start value).
@@ -172,7 +176,7 @@ pub enum Place {
 pub fn place_of(p: [f64; 2]) -> Place {
     if ROOM.contains(p) {
         Place::Engine
-    } else if CORRIDOR.contains(p) || TURRET_ROOM.contains(p) || LAB_ROOM.contains(p) || MEDBAY_ROOM.contains(p) {
+    } else if CORRIDOR.contains(p) || TURRET_ROOM.contains(p) || LAB_ROOM.contains(p) || MEDBAY_ROOM.contains(p) || STORAGE_ROOM.contains(p) {
         Place::Corridor
     } else if EQUIPMENT.contains(p) {
         Place::Equipment
@@ -186,7 +190,7 @@ pub fn place_of(p: [f64; 2]) -> Place {
 }
 
 /// The floor area of the rooms that share the corridor's air (m²): the equipment room has its own.
-pub const CORRIDOR_AREA: f64 = 4.0 * (CORRIDOR.half[0] * CORRIDOR.half[1] + TURRET_ROOM.half[0] * TURRET_ROOM.half[1] + LAB_ROOM.half[0] * LAB_ROOM.half[1] + MEDBAY_ROOM.half[0] * MEDBAY_ROOM.half[1]);
+pub const CORRIDOR_AREA: f64 = 4.0 * (CORRIDOR.half[0] * CORRIDOR.half[1] + TURRET_ROOM.half[0] * TURRET_ROOM.half[1] + LAB_ROOM.half[0] * LAB_ROOM.half[1] + MEDBAY_ROOM.half[0] * MEDBAY_ROOM.half[1] + STORAGE_ROOM.half[0] * STORAGE_ROOM.half[1]);
 /// The equipment room's floor area (m²).
 pub const EQUIPMENT_AREA: f64 = 4.0 * EQUIPMENT.half[0] * EQUIPMENT.half[1];
 
@@ -218,9 +222,15 @@ const PARTS: &[Part] = &[
     Part { id: "medbay_wall_south", at: [-5.55, -16.85], size: [6.3, H, WALL], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "medbay_wall_east", at: [-2.55, -13.85], size: [WALL, H, 6.3], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "medbay_roof", at: [-5.55, -13.85], size: [6.3, WALL, 6.3], lift: H, colour: WALL_COLOUR },
+    // The storage room (x -2.4..3.6, y -16..-11): the medbay's east wall is its west wall, its doorway is the 1.6 m gap in the
+    // corridor's south wall (x -0.2..1.4); its east wall stops at the equipment room's south wall.
+    Part { id: "storage_wall_south", at: [0.75, -16.15], size: [6.3, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "storage_wall_east", at: [3.75, -14.0], size: [WALL, H, 4.6], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "storage_roof", at: [0.75, -13.5], size: [6.3, WALL, 5.6], lift: H, colour: WALL_COLOUR },
     // The corridor (x -19..3.6, y -10.7..-7.7, 3 m wide, #311): its south wall east of the medbay, its
     // west end, its north wall with the bridge door (x -16..-14) and the doorways of the turret room and the lab.
-    Part { id: "corridor_wall_south_east", at: [0.675, -10.85], size: [6.15, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "corridor_wall_south_east_1", at: [-1.3, -10.85], size: [2.2, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "corridor_wall_south_east_2", at: [2.575, -10.85], size: [2.35, H, WALL], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "corridor_wall_west", at: [-19.15, -9.2], size: [WALL, H, 3.6], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "corridor_wall_north_1", at: [-17.65, -7.55], size: [3.3, H, WALL], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "corridor_wall_north_2", at: [-11.25, -7.55], size: [5.5, H, WALL], lift: 0.0, colour: WALL_COLOUR },
@@ -384,5 +394,20 @@ mod tests {
             assert!(place_of(m.at) != Place::Outside || m.id == hull_panels::AIRLOCK_OUT_ID, "{} stands in a room", m.name);
         }
         assert!(place_of(SPAWN) == Place::Outside && DEV.contains(SPAWN), "the walker starts in the dev zone");
+    }
+
+    /// The storage room breathes the corridor's air, and what stands in it stands inside its walls.
+    #[test]
+    fn the_storage_room_holds_its_cabinets_and_crates() {
+        assert_eq!(place_of(STORAGE_ROOM.centre), Place::Corridor);
+        for c in storage::cabinets() {
+            let sideways = (c.turn.abs() - 90.0).abs() < 1.0;
+            let half = if sideways { [c.size[2] * 0.5, c.size[0] * 0.5] } else { [c.size[0] * 0.5, c.size[2] * 0.5] };
+            let at = STORAGE_ROOM.point(c.at);
+            for corner in [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]] {
+                let p = [at[0] + corner[0] * half[0], at[1] + corner[1] * half[1]];
+                assert!(STORAGE_ROOM.contains(p), "{} stands inside the storage room", c.id);
+            }
+        }
     }
 }

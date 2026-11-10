@@ -1,0 +1,11 @@
+{
+  "_comment": "Pink; it wobbles in the hand. A lump of ore for the dig site (#324). Carried in one hand, three to a stack. TODO(initiator): shape, mass, what it is for.",
+  "id": "wobble_quartz",
+  "name": "Wobble quartz",
+  "code": "WBQ",
+  "take": "collect",
+  "hands": 1,
+  "stack": 3,
+  "tags": ["medium", "ore"],
+  "shape": { "extents": [0.18, 0.24, 0.18], "mass": 6.0, "colour": [0.95, 0.45, 0.75] }
+}

@@ -85,7 +85,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 | `crate-hull` | A crate thrown at the hull stops outside it, never in the cabin. |
 | `crate-wake-stream` | Crates 500 m away stay frozen; when the walker comes they wake as Avian bodies with no drop below ground. |
 | `town` | The first city stands on its plot, its buildings stop the walker, the characters stand at their spots. |
-| `dev_area` | The dev area: level ground, the walker starts on it (the unrevised rooms are empty: bridge, turret room, lab, medbay). |
+| `dev_area` | The dev area: level ground, the walker starts on it (the unrevised rooms are empty: bridge, turret room, lab, medbay; the storage room south of the corridor holds three crates, the mask and the extinguisher cabinet). |
 | `items` | Items on the dev area: collect, hold, drop, throw, a second player's request, inventory drag, a wrench through take-off. |
 | `hud` | The crew HUD: compass, vitals, credits fade, prompts, action bar dimming; with a window, pictures of its states. |
 | `health` | The walker's health: burn, radiation, on fire and down, on the host at the dev area. |

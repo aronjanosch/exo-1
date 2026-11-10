@@ -1,0 +1,11 @@
+{
+  "_comment": "Pale blue; it is always a little sleepy. A lump of ore for the dig site (#324). Carried in one hand, three to a stack. TODO(initiator): shape, mass, what it is for.",
+  "id": "snoozium",
+  "name": "Snoozium",
+  "code": "SNZ",
+  "take": "collect",
+  "hands": 1,
+  "stack": 3,
+  "tags": ["medium", "ore"],
+  "shape": { "extents": [0.2, 0.2, 0.2], "mass": 4.0, "colour": [0.65, 0.8, 0.95] }
+}

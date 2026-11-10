@@ -3,8 +3,9 @@
 //! walking away.
 use super::*;
 use crate::container_window::{place_centre, ContainerSpecs, ContainerWindow, Place};
-use crate::dev_area::storage::{CRATE, ROW_Y};
-use crate::dev_area::{DevArea, STORAGE};
+use crate::dev_area::layout::STORAGE_ROOM;
+use crate::dev_area::storage::CRATE_A as CRATE;
+use crate::dev_area::DevArea;
 use crate::interact::Interaction;
 use crate::items::{HudWindow, InventoryUi, Items};
 use item_core::{Action, Request};
@@ -95,14 +96,14 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
             let _ = w.resource_mut::<Items>().give(now, MINE, defs.get(id).unwrap().stack_of(n));
         }
         let pl = planet(w);
-        let (at, _) = w.resource::<DevArea>().ground(&pl, STORAGE.point([3.5, ROW_Y - 1.5]), 0.5).expect("dev area");
+        let (at, _) = w.resource::<DevArea>().ground(&pl, STORAGE_ROOM.point([-2.0, -0.6]), 0.5).expect("dev area");
         place_walker(w, at);
         true
     }));
     s.push(wait(0.3));
     s.push(Box::new(|w, c| {
         let mut q = w.query::<(&crate::dev_area::DevBox, &avian3d::prelude::Position)>();
-        let at = q.iter(w).find(|(b, _)| b.id == "store_crate").map(|(_, p)| p.0).expect("the crate box");
+        let at = q.iter(w).find(|(b, _)| b.id == "store_crate_a").map(|(_, p)| p.0).expect("the crate box");
         super::items::look_at(w, at);
         c.v.insert("mine", mine(w) as f64);
         true
@@ -110,7 +111,7 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
     s.push(wait(0.2));
     s.push(Box::new(|w, c| {
         let p = w.resource::<Interaction>().prompt.clone();
-        check(c, p.contains("Supply crate"), format!("container: the prompt offers the crate ({p:?})"));
+        check(c, p.contains("Crate A"), format!("container: the prompt offers the crate ({p:?})"));
         check(c, c.v["mine"] == 3.0, format!("container: three items to move ({})", c.v["mine"]));
         true
     }));
@@ -142,24 +143,24 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
         let slot = bar_slot_of(w, "extinguisher").expect("the extinguisher");
         let from = centre(w, Place::Bar(slot));
         pointer_at(w, Some(from), true);
-        begin(w, c, "container: drag the extinguisher to place 5");
+        begin(w, c, "container: drag the extinguisher to place 6");
         true
     }));
     s.push(wait(0.1));
     s.push(Box::new(|w, c| {
-        let to = centre(w, Place::Box(4));
+        let to = centre(w, Place::Box(5));
         pointer_at(w, Some(to), true);
         if c.t < 0.1 {
             return false;
         }
-        check(c, cw(w).dragging() && cw(w).over.as_ref().is_some_and(|(p, why)| *p == Place::Box(4) && why.is_none()), format!("container: the place accepts ({:?})", cw(w).over));
+        check(c, cw(w).dragging() && cw(w).over.as_ref().is_some_and(|(p, why)| *p == Place::Box(5) && why.is_none()), format!("container: the place accepts ({:?})", cw(w).over));
         pointer_at(w, Some(to), false);
         true
     }));
     s.push(wait(3.0 * DELAY + 0.1));
     s.push(Box::new(|w, c| {
-        let on_five = items(w).host.racks[&CRATE].slot(4).is_some_and(|s| s.item.kind.as_str() == "extinguisher");
-        check(c, on_five && in_bar(w, "extinguisher") == 0 && mine(w) == 3, "container: the extinguisher lies on place 5, not in the bar".into());
+        let on_five = items(w).host.racks[&CRATE].slot(5).is_some_and(|s| s.item.kind.as_str() == "extinguisher");
+        check(c, on_five && in_bar(w, "extinguisher") == 0 && mine(w) == 3, "container: the extinguisher lies on place 6, not in the bar".into());
         end(w, c, "dragged".into());
         true
     }));
@@ -351,7 +352,7 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
     s.push(Box::new(|w, c| {
         begin(w, c, "container: walking away closes the window");
         let pl = planet(w);
-        let (at, _) = w.resource::<DevArea>().ground(&pl, STORAGE.point([3.5, ROW_Y - 9.0]), 0.5).expect("dev area");
+        let (at, _) = w.resource::<DevArea>().ground(&pl, [STORAGE_ROOM.centre[0] - 2.0, STORAGE_ROOM.centre[1] + 12.0], 0.5).expect("dev area");
         place_walker(w, at);
         true
     }));

@@ -521,6 +521,18 @@
     "SCRAM. The chamber is vented, the lights dip and a good part of the canisters' fill goes out with it. Safe, and very expensive.",
     "SCRAM. Somebody hit the big red button. The reactor is off and the canisters are a little lighter."
   ],
+  "notice.reactor.countdown": [
+    "CORE UNSTABLE. The klaxon is not decoration. Cool it down or throw it out.",
+    "CORE UNSTABLE. The countdown has started and the core is not joking. Cool it or eject it."
+  ],
+  "notice.reactor.countdown_30": [
+    "30 seconds to implosion.",
+    "30 SECONDS. The core is humming a worrying note."
+  ],
+  "notice.reactor.countdown_10": [
+    "10 SECONDS. Eject it or say goodbye.",
+    "10 seconds to implosion. Last call for the lever."
+  ],
   "notice.reactor.core_implosion": [
     "The ejected core imploded outside. A bright flash, a dull thump, and the hull did not mind at all.",
     "CORE GONE. It went off out there, where it can only be rude to the scenery."

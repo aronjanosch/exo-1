@@ -78,7 +78,8 @@ pub enum Face {
     Off,
     /// The countdown to the implosion runs (seconds), or the core has imploded (None).
     Implosion(Option<f64>),
-    /// The core is out; the countdown, if it runs on, in seconds.
+    /// The core is out; the countdown, if it runs on outside the ship, in seconds (the news carry the outside one while ejected).
+    /// TODO(initiator): placeholder look.
     CoreEjected(Option<f64>),
     /// Awake on battery, the start-up conditions are listed (#319).
     Boot,
@@ -100,7 +101,9 @@ pub fn face(r: Option<&ReactorNews>) -> Face {
         Face::Implosion(None)
     } else if r.ejected {
         Face::CoreEjected(r.implosion_eta_s)
-    } else if let Some(s) = r.implosion_eta_s.filter(|_| r.lamps[Lamp::Implosion.index()]) {
+    } else if let Some(s) = r.implosion_eta_s.filter(|s| s.is_finite()) {
+        // The countdown takes the screen over as soon as the timer runs (#325, not only at the lamp's half-way line).
+        // TODO(initiator): placeholder look (the word and the clock) until the designed state arrives.
         Face::Implosion(Some(s))
     } else if r.start == StartStage::Boot {
         Face::Boot
@@ -742,6 +745,9 @@ mod tests {
         assert_eq!(face(Some(&ReactorNews { power_on: false, ..r })), Face::Off);
         assert_eq!(face(Some(&ReactorNews { imploded: true, ..r })), Face::Implosion(None));
         assert_eq!(face(Some(&ReactorNews { ejected: true, ..r })), Face::CoreEjected(None));
+        assert_eq!(face(Some(&ReactorNews { implosion_eta_s: Some(90.0), ..r })), Face::Implosion(Some(90.0)), "the countdown takes the screen once the timer runs");
+        assert_eq!(face(Some(&ReactorNews { ejected: true, implosion_eta_s: Some(40.0), ..r })), Face::CoreEjected(Some(40.0)));
+        assert_eq!(face(Some(&ReactorNews { implosion_eta_s: Some(f64::NAN), ..r })), Face::Running, "a bad eta is no countdown");
     }
 
     #[test]

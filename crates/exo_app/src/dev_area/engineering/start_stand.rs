@@ -16,7 +16,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, sync_stand.after(host_presses).in_set(ShipSet::Asks));
     app.add_systems(FixedUpdate, settle_lever.in_set(ShipSet::React));
     app.add_systems(FixedUpdate, drop_stand.after(react).in_set(crate::phases::Fx::Walker));
-    app.add_systems(FixedUpdate, dev_cold_start.in_set(crate::phases::Fx::Effects));
+    app.add_systems(FixedUpdate, (dev_cold_start, dev_critical).in_set(crate::phases::Fx::Effects));
 }
 
 /// The stand as the kit holds it.
@@ -77,6 +77,27 @@ fn dev_cold_start(mut menu: ResMut<crate::dev::DevMenu>, items: Res<Items>, mut 
         }
     }
     menu.last = Some("reactor: cold start (dark, toggles off)".into());
+}
+
+/// The timer the dev command sets, 0..1 of its delay. TODO(initiator): start value 75 %.
+pub const DEV_CRITICAL_TIMER: f64 = 0.75;
+
+/// F10 'Reactor: make it critical' (#325): the running reactor at critical heat with the timer at `DEV_CRITICAL_TIMER`, Manual so it stays there.
+fn dev_critical(mut menu: ResMut<crate::dev::DevMenu>, items: Res<Items>, mut sim: ResMut<ReactorSim>) {
+    if !std::mem::take(&mut menu.critical_reactor) {
+        return;
+    }
+    if items.role == Role::Client {
+        return;
+    }
+    if sim.room.make_critical(DEV_CRITICAL_TIMER) {
+        sim.manual = true;
+        sim.injection = 100.0;
+        sim.converter = 30.0;
+        menu.last = Some("reactor: critical, the countdown runs".into());
+    } else {
+        menu.last = Some("reactor: not running, nothing to make critical".into());
+    }
 }
 
 /// Prime lamp `i` (0 is the bottom one) is lit: the trap's charge reaches its segment, and stays lit while the reactor runs.

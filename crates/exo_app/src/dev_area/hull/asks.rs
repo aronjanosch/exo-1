@@ -76,7 +76,9 @@ fn alarm_level(items: Res<Items>, mut sim: ResMut<ReactorSim>, fire_alarm: Res<F
     if items.role == Role::Client {
         return;
     }
-    let level = alarm_of(sim.room.level()).max(fire_alarm.0);
+    // The core's implosion timer running aboard is a Danger alarm whatever the heat does (#325): klaxon and red pulse.
+    let countdown = sim.room.reactor().timers().1 > 0.0 && !sim.room.reactor().ejected() && !sim.room.reactor().imploded();
+    let level = alarm_of(sim.room.level()).max(fire_alarm.0).max(if countdown { Alarm::Danger } else { Alarm::None });
     if level != Alarm::None || sim.alarmed {
         alarm.level = level;
     }

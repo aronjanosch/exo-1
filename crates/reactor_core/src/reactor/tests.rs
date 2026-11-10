@@ -645,3 +645,104 @@ fn a_spent_canister_seats_and_adds_nothing_and_nan_life_counts_as_spent() {
     run(&mut r, 5.0, 100.0);
     assert!(r.heat().is_finite() && r.injection().is_finite());
 }
+
+/// Reactor bad end (#325): the ejected core keeps its implosion timer and implodes outside.
+fn critical_reactor() -> Reactor {
+    let mut r = reactor(50.0);
+    r.set_targets(100.0, 30.0);
+    run(&mut r, 600.0, 500.0);
+    r
+}
+
+fn running_timer() -> Reactor {
+    let mut r = reactor(50.0);
+    r.set_targets(100.0, 30.0);
+    for _ in 0..(300.0 / DT) as usize {
+        r.step(DT, 500.0);
+        if r.timers().1 > 0.3 {
+            return r;
+        }
+    }
+    panic!("the timer never ran");
+}
+
+#[test]
+fn an_ejected_core_keeps_its_timer_and_implodes_outside_without_a_blast() {
+    let mut r = running_timer();
+    let at = r.timers().1;
+    assert_eq!(r.eject(), vec![ReactorEvent::CoreEjected]);
+    assert_eq!(r.timers(), (0.0, 0.0), "the reactor's own timer is clear");
+    let out = r.outside_timer().expect("the core counts outside");
+    assert!((out - at).abs() < 1e-9, "it keeps what it had: {at} vs {out}");
+    let ev = run(&mut r, 130.0, 500.0);
+    let outside = first(&ev, |e| *e == ReactorEvent::CoreImplodedOutside).expect("it implodes outside");
+    assert!(outside < 130.0 * (1.0 - at) + 1.0, "after the rest of its timer: {outside}");
+    assert!(!ev.iter().any(|(_, e)| matches!(e, ReactorEvent::Implosion | ReactorEvent::Blast(_))), "nothing aboard: {ev:?}");
+    assert_eq!(ev.iter().filter(|(_, e)| *e == ReactorEvent::CoreImplodedOutside).count(), 1, "once");
+    assert_eq!(r.outside_timer(), None);
+    assert!(!r.imploded());
+}
+
+#[test]
+fn an_ejected_core_that_had_no_timer_stays_inert() {
+    let mut r = reactor(50.0);
+    r.eject();
+    assert_eq!(r.outside_timer(), None);
+    let ev = run(&mut r, 300.0, 500.0);
+    assert!(!ev.iter().any(|(_, e)| *e == ReactorEvent::CoreImplodedOutside));
+}
+
+#[test]
+fn the_outside_timer_stays_in_range_and_survives_a_save() {
+    let mut r = running_timer();
+    r.eject();
+    run(&mut r, 20.0, 500.0);
+    let back = r.to_save();
+    let mut r2 = Reactor::from_save(ReactorTuning::default(), &back);
+    assert_eq!(r2.outside_timer(), r.outside_timer());
+    for rr in [&mut r, &mut r2] {
+        let ev = run(rr, 200.0, 500.0);
+        assert!(first(&ev, |e| *e == ReactorEvent::CoreImplodedOutside).is_some());
+    }
+    let nan = ReactorSave { outside_timer: Some(f64::NAN), ..r.to_save() };
+    let r3 = Reactor::from_save(ReactorTuning::default(), &nan);
+    assert!(r3.outside_timer().is_some_and(|t| (0.0..=1.0).contains(&t)));
+}
+
+#[test]
+fn make_critical_puts_a_running_core_at_critical_heat_with_the_timer_set_and_it_stays_there() {
+    let mut r = reactor(50.0);
+    run(&mut r, 20.0, 500.0);
+    assert!(r.make_critical(0.75));
+    r.step(DT, 500.0);
+    assert!(r.heat() > r.bands().heat_allowed.hi, "critical heat");
+    assert!((r.timers().1 - 0.75).abs() < 0.01, "timer near 75 %: {}", r.timers().1);
+    assert!(r.alarm(AlarmKind::HeatCritical));
+    let ev = run(&mut r, 10.0, 500.0);
+    assert!(r.timers().1 > 0.75, "the timer runs on: {}", r.timers().1);
+    assert!(!ev.iter().any(|(_, e)| *e == ReactorEvent::Implosion), "not yet");
+    let ev = run(&mut r, 60.0, 500.0);
+    assert!(first(&ev, |e| *e == ReactorEvent::Implosion).is_some(), "and it implodes aboard if nobody acts");
+}
+
+#[test]
+fn make_critical_does_nothing_to_a_core_that_is_off_or_out() {
+    let mut r = reactor(50.0);
+    r.set_power(false);
+    assert!(!r.make_critical(0.75));
+    let mut r = reactor(50.0);
+    r.eject();
+    assert!(!r.make_critical(0.75));
+}
+
+#[test]
+fn the_timer_aboard_still_runs_to_an_implosion_and_cooling_still_runs_it_back() {
+    let r = critical_reactor();
+    assert!(r.imploded(), "left critical, it implodes aboard (the game-over event)");
+    let mut r = running_timer();
+    let before = r.timers().1;
+    r.set_targets(0.0, 0.0);
+    run(&mut r, 20.0, 500.0);
+    assert!(r.timers().1 < before, "cooling runs the timer back");
+    assert_eq!(r.outside_timer(), None);
+}

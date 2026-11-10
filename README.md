@@ -97,6 +97,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 | `coolant` | The pump's coolant: it cools by default, the dev drain empties the tank and the core climbs, a refilled tank brings the flow back, E-COOL. (The refill by hand at the pump went with its housing.) |
 | `canisters` | Antimatter canisters by hand: from the rack, F at a reactor slot loads, the brake pull at a hot core burns the hand and keeps the canister's life. |
 | `blast` | The implosion blast reaches a walker two metres off and not one at 25 m. |
+| `reactor_end` | The reactor's bad end (#325): the dev menu makes the core critical and the countdown runs; thrown out, it implodes outside and hurts a walker near it, spares one beyond the safe distance, no blast and no hull damage; left aboard, it ends the game. |
 | `fire` | Fires in the engine room, sprayed out with the extinguisher. |
 | `fire_grid` | The cell model of the engine-room fire, switched on (fire model Grid), catches the corridor. |
 | `extinguisher` | The extinguisher's supply: wear, empty, refill at the corridor rack. |

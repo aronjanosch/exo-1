@@ -30,6 +30,8 @@ pub struct ReactorCounts {
     pub implosions: u32,
     pub blasts: u32,
     pub ejects: u32,
+    /// The ejected cores that imploded outside the ship (#325).
+    pub core_implosions: u32,
     /// The SCRAMs of the physical button (#316).
     pub scrams: u32,
     pub ecools: u32,
@@ -184,7 +186,10 @@ impl ReactorSim {
             lamps: lamps_of(&self.room.warnings()),
             boost: r.heat_boost(),
             boost_ok: r.power_on() && r.condition().functioning() && r.boost_allowed(),
-            implosion_eta_s: implosion_eta(r.timers().1, r.tuning().implosion_delay_s, r.imploded()),
+            // An ejected core's countdown is the one outside (#325); the reactor's own timer is clear then.
+            implosion_eta_s: r.outside_eta_s().or_else(|| implosion_eta(r.timers().1, r.tuning().implosion_delay_s, r.imploded())),
+            outside_eta_s: r.outside_eta_s(),
+            core_implosions: 0,
             ejected: r.ejected(),
             // The host's count is set by `reactor_step`, as the blasts are.
             ejects: 0,
@@ -406,6 +411,10 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
             counts.ejects += 1;
             info!("reactor: CORE EJECTED");
         }
+        RoomEvent::Reactor(ReactorEvent::CoreImplodedOutside) => {
+            counts.core_implosions += 1;
+            warn!("reactor: the ejected core IMPLODED OUTSIDE");
+        }
         RoomEvent::EmergencyCool => {
             counts.ecools += 1;
             info!("reactor: EMERGENCY COOLING");
@@ -511,6 +520,7 @@ fn ship_news(mut items: ResMut<Items>, sim: Res<ReactorSim>, counts: Res<Reactor
     let mut now = sim.news(0.0);
     now.blasts = counts.blasts;
     now.ejects = counts.ejects;
+    now.core_implosions = counts.core_implosions;
     now.ecools = counts.ecools;
     now.jumps = counts.jumps;
     items.reactor = Some(now);
@@ -902,7 +912,7 @@ mod tests {
         route(RoomEvent::Reactor(ReactorEvent::Fire { size: 0.1 }), &mut k);
         route(RoomEvent::Fire { size: 0.05, source: reactor_core::Source::Junction(0) }, &mut k);
         route(RoomEvent::Reactor(ReactorEvent::Implosion), &mut k);
-        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, implosions: 1, blasts: 0, ejects: 0, scrams: 0, ecools: 0, jumps: 0 });
+        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, implosions: 1, blasts: 0, ejects: 0, core_implosions: 0, scrams: 0, ecools: 0, jumps: 0 });
         route(RoomEvent::Reactor(ReactorEvent::Blast(reactor_core::Blast::default())), &mut k);
         assert_eq!(k.blasts, 1, "the blast is counted");
     }

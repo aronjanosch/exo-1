@@ -10,6 +10,8 @@ use crate::origin::WorldPos;
 #[derive(Component)]
 pub(super) struct RoomLight {
     alarm: bool,
+    /// A warm lamp in the engine room: it dims while the implosion countdown runs (#325), so the red pulse reads.
+    engine_room: bool,
 }
 
 /// Ours: a red lamp that is lit only in an emergency (the lights factor below 0.1).
@@ -33,7 +35,7 @@ pub(super) fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area:
         let intensity = if alarm { 0.0 } else { 60_000.0 };
         made.push(
             commands
-                .spawn((PointLight { color: colour, intensity, range: 12.0, shadow_maps_enabled: false, ..default() }, Transform::default(), WorldPos(at(p, h)), RoomLight { alarm }))
+                .spawn((PointLight { color: colour, intensity, range: 12.0, shadow_maps_enabled: false, ..default() }, Transform::default(), WorldPos(at(p, h)), RoomLight { alarm, engine_room: (p[0] - ROOM.centre[0]).abs() <= ROOM.half[0] && (p[1] - ROOM.centre[1]).abs() <= ROOM.half[1] }))
                 .id(),
         );
     }
@@ -76,9 +78,12 @@ pub(super) fn room_lights(
             crate::audio_slice::one_shot(&mut commands, &s.zap, crate::audio_slice::ZAP_VOL);
         }
     }
+    // TODO(initiator): how far the room's lamps dim while the countdown runs (start value 15 %).
+    let countdown = items.reactor.as_ref().is_some_and(crate::dev_area::engineering::countdown::countdown_on);
     for (l, mut light) in &mut lights {
         if !l.alarm {
-            light.intensity = ROOM_LAMP_INTENSITY * brightness as f32;
+            let dim = if countdown && l.engine_room { 0.15 } else { 1.0 };
+            light.intensity = ROOM_LAMP_INTENSITY * brightness as f32 * dim;
         }
     }
 }

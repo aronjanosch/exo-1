@@ -44,14 +44,16 @@
     "boost_decay": 1.0,
     "scram_fill_loss": 0.25,
     "blast": {
-      "_comment": "Implosion blast (#300, Barotrauma reactor.xml:45-58): an implosion with more than blast.min_fill available fill blasts; range_m, burn and stun_s are for the players in range, device_damage breaks the pump and the junction box (every device in the room is in range), radiation_range_m and radiation for the radiation (the glue's); all Barotrauma's values, TODO(initiator).",
+      "_comment": "Implosion blast (#300, Barotrauma reactor.xml:45-58): an implosion with more than blast.min_fill available fill blasts; range_m, burn and stun_s are for the players in range, device_damage breaks the pump and the junction box (every device in the room is in range), radiation_range_m and radiation for the radiation (the glue's); all Barotrauma's values, TODO(initiator). safe_distance_m and outside_burn (#325, ours) are for the ejected core's implosion outside the ship: the burn is full inside half the safe distance and falls to none at it; nothing to the hull. TODO(initiator): both values.",
       "min_fill": 1.0,
       "range_m": 7.5,
       "burn": 500.0,
       "stun_s": 15.0,
       "device_damage": 500.0,
       "radiation_range_m": 20.0,
-      "radiation": 75.0
+      "radiation": 75.0,
+      "safe_distance_m": 25.0,
+      "outside_burn": 500.0
     },
     "inertia": true,
     "condition": {

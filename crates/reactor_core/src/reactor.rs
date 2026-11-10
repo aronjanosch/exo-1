@@ -29,11 +29,17 @@ pub struct Blast {
     pub radiation_range_m: f64,
     /// Radiation sickness, scaled by the players' max vitality (Barotrauma: 75).
     pub radiation: f64,
+    /// The ejected core's implosion outside the ship (#325): a body this far from it or further takes
+    /// nothing. TODO(initiator): the distance (start value 25 m).
+    pub safe_distance_m: f64,
+    /// The burn a body takes from it: full inside half `safe_distance_m`, falling to 0 at `safe_distance_m`.
+    /// TODO(initiator): the value.
+    pub outside_burn: f64,
 }
 
 impl Default for Blast {
     fn default() -> Blast {
-        Blast { min_fill: 1.0, range_m: 7.5, burn: 500.0, stun_s: 15.0, device_damage: 500.0, radiation_range_m: 20.0, radiation: 75.0 }
+        Blast { min_fill: 1.0, range_m: 7.5, burn: 500.0, stun_s: 15.0, device_damage: 500.0, radiation_range_m: 20.0, radiation: 75.0, safe_distance_m: 25.0, outside_burn: 500.0 }
     }
 }
 
@@ -318,8 +324,12 @@ pub enum ReactorEvent {
     /// available fill. The values are the reactor's `blast` tuning.
     Blast(Blast),
     Alarm { kind: AlarmKind, on: bool },
-    /// The core was thrown out (`Reactor::eject`). No implode and no blast follow it.
+    /// The core was thrown out (`Reactor::eject`). No implode aboard and no blast follow it. If its
+    /// implosion timer was running, the core goes on counting outside (`outside_timer`).
     CoreEjected,
+    /// The ejected core ran its timer out and imploded outside the ship (#325). No blast, no hull or
+    /// room damage; the glue hurts the players near it by distance. `Implosion` is the one aboard.
+    CoreImplodedOutside,
     Device(DeviceEvent),
 }
 
@@ -354,6 +364,10 @@ pub struct ReactorSave {
     pub output_boost_kw: f64,
     pub auto_boost: f64,
     pub extra_cool: f64,
+    /// Seconds the ejected core's implosion timer has run outside (#325); None when no core is out
+    /// counting. Old saves have none.
+    #[serde(default)]
+    pub outside_timer: Option<f64>,
 }
 
 #[derive(Clone, Debug)]
@@ -403,6 +417,9 @@ pub struct Reactor {
     /// Extra cooling in degrees of target, on top of the pump's (`cooling_max`). The engine room sets
     /// it while an emergency cooling runs (`EngineRoom::emergency_cool`), 0 otherwise.
     extra_cool: f64,
+    /// The ejected core's implosion timer outside the ship, seconds (#325): it keeps what the core's
+    /// `overheat_timer` held at the eject and runs up to `implosion_delay_s`, then the core implodes there.
+    outside_timer: Option<f64>,
 }
 
 impl Reactor {
@@ -436,6 +453,7 @@ impl Reactor {
             output_boost_kw: self.output_boost_kw,
             auto_boost: self.auto_boost,
             extra_cool: self.extra_cool,
+            outside_timer: self.outside_timer,
         }
     }
 
@@ -471,6 +489,7 @@ impl Reactor {
             output_boost_kw: s.output_boost_kw,
             auto_boost: s.auto_boost,
             extra_cool: s.extra_cool,
+            outside_timer: s.outside_timer.map(|t| if t.is_finite() { t.max(0.0) } else { 0.0 }),
         }
     }
 }
@@ -552,6 +571,7 @@ impl Reactor {
             output_boost_kw: 0.0,
             auto_boost: 1.0,
             extra_cool: 0.0,
+            outside_timer: None,
         }
     }
 
@@ -719,6 +739,12 @@ impl Reactor {
         }
         self.ejected = true;
         self.imploded = false;
+        // The timer goes out with the core and keeps counting there (#325). One that has not started
+        // stays off: a cold core thrown out is only a lump. A second core out while one still counts
+        // keeps the one nearer its end.
+        if self.overheat_timer > 0.0 {
+            self.outside_timer = Some(self.outside_timer.map_or(self.overheat_timer, |t| t.max(self.overheat_timer)));
+        }
         self.power_on = false;
         self.canisters.clear();
         self.fill = 0.0;
@@ -922,6 +948,7 @@ impl Reactor {
     pub fn step(&mut self, dt: f64, load_kw: f64) -> Vec<ReactorEvent> {
         let t = self.tuning;
         let mut ev = Vec::new();
+        self.step_outside(dt, &mut ev);
         let k = dt.min(1.0);
         let coast = (dt / t.coolant_coast_s.max(1e-9)).min(1.0);
         self.coolant += (self.coolant_target - self.coolant) * coast;
@@ -1109,6 +1136,45 @@ impl Reactor {
         } else {
             self.fire_timer = (self.fire_timer - dt).max(0.0);
         }
+    }
+
+    /// The ejected core's timer runs on outside (at the plain rate, no condition, no cooling) and the
+    /// core implodes there when it is out. The reactor itself is not touched.
+    fn step_outside(&mut self, dt: f64, ev: &mut Vec<ReactorEvent>) {
+        let Some(t) = self.outside_timer else { return };
+        let t = t + dt.max(0.0);
+        if t >= self.tuning.implosion_delay_s {
+            self.outside_timer = None;
+            ev.push(ReactorEvent::CoreImplodedOutside);
+        } else {
+            self.outside_timer = Some(t);
+        }
+    }
+
+    /// The dev command "make it critical" (#325): a running core is put to critical heat with its implosion timer at
+    /// `timer` (0..1 of its delay), Manual at injection 100 and converter 30, which keeps it there until the crew cools
+    /// it or throws it out. False (nothing changes) when the core is off, broken, ejected or imploded.
+    pub fn make_critical(&mut self, timer: f64) -> bool {
+        if !self.power_on || self.ejected || self.imploded || !self.condition.functioning() {
+            return false;
+        }
+        let hi = self.bands().heat_allowed.hi;
+        self.set_targets(100.0, 30.0);
+        self.injection = self.target_injection.min(self.fill);
+        self.heat = self.heat.max(hi + 2.0).min(100.0);
+        self.heat_vel = 0.0;
+        self.overheat_timer = timer.clamp(0.0, 0.99) * self.tuning.implosion_delay_s;
+        true
+    }
+
+    /// The ejected core's implosion timer, 0..1 of its delay; None when no core out there is counting.
+    pub fn outside_timer(&self) -> Option<f64> {
+        self.outside_timer.map(|t| (t / self.tuning.implosion_delay_s.max(1e-9)).clamp(0.0, 1.0))
+    }
+
+    /// Seconds until the ejected core implodes outside; None when none counts.
+    pub fn outside_eta_s(&self) -> Option<f64> {
+        self.outside_timer.map(|t| (self.tuning.implosion_delay_s - t).max(0.0))
     }
 
     fn implosion(&mut self, ev: &mut Vec<ReactorEvent>) {

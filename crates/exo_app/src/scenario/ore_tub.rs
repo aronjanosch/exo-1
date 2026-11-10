@@ -394,4 +394,6 @@ pub(super) fn ore_tub_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) 
         c.t >= 0.8
     }));
     s.push(shot_step("ore-tubs"));
+    // The picture is written a few frames after the request.
+    s.push(wait(0.5));
 }

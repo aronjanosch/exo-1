@@ -90,7 +90,7 @@ fn open_incidents(w: &World) -> bool {
     situation_of(sim, fires).busy()
 }
 
-pub(super) fn faults_steps(s: &mut Vec<Step>) {
+pub(super) fn faults_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
     s.push(Box::new(|w, c| {
         begin(w, c, "faults: the table and the host's body for the walker");
         w.resource_mut::<Items>().delay = super::items::DELAY;
@@ -141,6 +141,17 @@ pub(super) fn faults_steps(s: &mut Vec<Step>) {
         look_box(w);
         (c.t > 0.5).then(|| "at JB-2".into())
     }));
+    // The look: JB-2 blown, the corridor in its emergency glow (a picture only in a window run; further back the view is a bare wall).
+    s.push(run("faults: and close to the box again", 3.0, |w, c| {
+        if c.t == 0.0 {
+            let feet = ground(w, junction_front(BOX, 1.4), 0.0);
+            place_walker(w, feet);
+        }
+        look_box(w);
+        (c.t > 0.6).then(|| "close".into())
+    }));
+    s.push(shot_step("faults-jb2-dark-near"));
+    s.push(wait(0.5));
     s.push(run("faults: a repair try with the screwdriver is refused (no session, no ring), before and at the host", 6.0, |w, c| {
         look_box(w);
         if c.t < 0.3 {

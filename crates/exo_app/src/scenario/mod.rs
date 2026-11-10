@@ -70,7 +70,11 @@ pub fn plugin(name: &str, headless: bool) -> impl Plugin {
     move |app: &mut App| {
         app.add_systems(FixedUpdate, run_script.run_if(resource_exists::<Script>).before(crate::controls::resolve_actions).in_set(crate::phases::Fx::Input));
         // The incident director is on in the shipped values (#328): a scenario runs without its random faults; `faults` switches it on itself.
-        app.add_systems(Startup, |mut sim: ResMut<crate::dev_area::ship::ReactorSim>| sim.director.set_enabled(false));
+        app.add_systems(Startup, |sim: Option<ResMut<crate::dev_area::ship::ReactorSim>>| {
+            if let Some(mut sim) = sim {
+                sim.director.set_enabled(false);
+            }
+        });
         if name == "foreign" {
             // The remote ship is placed before the controllers read it, after net_pre.
             app.add_systems(FixedUpdate, net::foreign_drive.run_if(resource_exists::<ForeignDriver>).after(crate::net_live::net_pre).in_set(crate::phases::Fx::Input));
@@ -641,7 +645,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "reactor_room" => reactor_room::reactor_room_steps(&mut s, &shot_step),
         "blast" => blast::blast_steps(&mut s),
         "reactor_end" => reactor_end::reactor_end_steps(&mut s),
-        "faults" => faults::faults_steps(&mut s),
+        "faults" => faults::faults_steps(&mut s, &shot_step),
         "fire" => fire::fire_steps(&mut s),
         "fire_grid" => fire_grid::fire_grid_steps(&mut s),
         "extinguisher" => extinguisher::extinguisher_steps(&mut s),

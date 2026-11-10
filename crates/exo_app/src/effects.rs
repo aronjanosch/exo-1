@@ -176,7 +176,7 @@ struct Particle {
 }
 
 #[derive(Resource)]
-struct FxAssets {
+pub(crate) struct FxAssets {
     mesh: Handle<Mesh>,
 }
 
@@ -252,7 +252,7 @@ fn particle_material(kind: Kind) -> StandardMaterial {
     }
 }
 
-fn spawn_particle(commands: &mut Commands, assets: &FxAssets, mats: &mut Assets<StandardMaterial>, kind: Kind, at: DVec3, vel: DVec3, gravity: f64, size: f32, life: f32) {
+pub(crate) fn spawn_particle(commands: &mut Commands, assets: &FxAssets, mats: &mut Assets<StandardMaterial>, kind: Kind, at: DVec3, vel: DVec3, gravity: f64, size: f32, life: f32) {
     let mat = mats.add(particle_material(kind));
     commands.spawn((Particle { vel, gravity, kind, size, life, age: 0.0, mat: mat.clone() }, WorldPos(at), Mesh3d(assets.mesh.clone()), MeshMaterial3d(mat), Transform::from_scale(Vec3::splat(0.001))));
 }
@@ -276,7 +276,7 @@ fn particles_step(mut commands: Commands, time: Res<Time>, mut mats: ResMut<Asse
     }
 }
 
-fn jet(up: DVec3, seed: u64, speed: f64, side: f64) -> DVec3 {
+pub(crate) fn jet(up: DVec3, seed: u64, speed: f64, side: f64) -> DVec3 {
     let a = noise(seed) * TAU;
     let s = noise(seed.wrapping_add(7)) * side;
     let t = up.any_orthonormal_vector();

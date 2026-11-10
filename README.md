@@ -100,6 +100,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 | `fire` | Fires in the engine room, sprayed out with the extinguisher. |
 | `fire_grid` | The cell model of the engine-room fire, switched on (fire model Grid), catches the corridor. |
 | `extinguisher` | The extinguisher's supply: wear, empty, refill at the corridor rack. |
+| `dig` | The dig run (#324): cut a chunk of ore with the welder, pick it up, store it in Crate B; no breath inside the dig site without a suit, none lost outside. |
 | `repair` | Repair at the junction box by holding, with the ring off (the pump has no housing now). |
 | `savefile` | Save, restart, load: the state that must survive comes back. |
 | `licence` | The seat refuses without the flight licence; the exam at the flight school passes and the seat works. |

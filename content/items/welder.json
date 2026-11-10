@@ -1,11 +1,12 @@
 {
-  "_comment": "The welder (#311): the tool the crew takes outside (the EVA station gives it a use; none yet). It only has to fit an equipment locker. TODO(initiator): shape, mass, colour.",
+  "_comment": "The welder (#311): the tool the crew takes outside (its use is cutting ore at the dig site (#324); no fuel, no wear). It only has to fit an equipment locker. TODO(initiator): shape, mass, colour.",
   "id": "welder",
   "name": "Welder",
   "code": "WLD",
   "take": "collect",
   "hands": 1,
   "stack": 1,
+  "use": "cut",
   "tags": ["small", "tool"],
   "shape": { "extents": [0.12, 0.2, 0.3], "mass": 1.5, "colour": [0.95, 0.5, 0.15] }
 }

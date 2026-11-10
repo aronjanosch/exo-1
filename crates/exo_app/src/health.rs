@@ -249,7 +249,7 @@ pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<
         // A body in a mask breathes the mask's air (r38), whatever the room holds.
         let room_air = match masks.as_ref().and_then(|m| m.0.get(id)) {
             Some(&o) => o,
-            None if inside(&NO_AIR) || inside(&VACUUM_ROOM) => 0.0,
+            None if inside(&NO_AIR) || inside(&VACUUM_ROOM) || inside(&crate::dev_area::DIG_SITE) => 0.0,
             None => room_air,
         };
         let fire = heat.as_ref().and_then(|h| h.0.get(id)).copied().unwrap_or(0.0);

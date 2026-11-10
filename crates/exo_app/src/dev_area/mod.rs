@@ -1,7 +1,7 @@
 //! The dev area: a small level rectangle on Hearth (`content/place/dev_area.json`) to try the
 //! mechanics without the finished ship. Area frame: metres, x east, y north, from the place's
 //! centre (`town::Frame`). Two parts: in the south half the mini ship (`layout`), in the north half
-//! the open zones (storage, hazards, dev; the role zones of engineering, bridge, turrets, lab and medbay
+//! the open zones (dig site, hazards, dev; the role zones of engineering, bridge, turrets, lab and medbay
 //! are gone); the pad zone lies south-east of the ship. Each owner module
 //! (`hull`, `engineering`, `bridge`, `turrets`, `crew`, `gear`, `storage`,
 //! `hazards`, `fire`, `dev`, with `ship` the shared step) has its own plugin; a zone's boxes go into
@@ -20,6 +20,7 @@ pub mod bridge;
 pub mod crew;
 pub mod dev_asks;
 pub mod dev;
+pub mod dig;
 pub mod equipment;
 pub mod engineering;
 pub mod fire;
@@ -51,11 +52,12 @@ impl Zone {
     }
 }
 
-/// The open zones in the area's north half: the storage cabinets, the hazards and the dev zone (item table). The role
+/// The open zones in the area's north half: the dig site, the hazards and the dev zone (item table). The role
 /// zones (engineering, bridge, turrets, lab, medbay) that mirrored the ship's rooms are gone. TODO(initiator): sizes and order are
 /// greybox values (#306).
 const ZONE_HALF: [f64; 2] = [5.5, 4.0];
-pub const STORAGE: Zone = Zone { name: "storage", centre: [-6.0, 15.5], half: ZONE_HALF };
+/// The dig site (#324): three ore veins, and a hollow of bad air inside these bounds (`health`: no breath). TODO(initiator): the size.
+pub const DIG_SITE: Zone = Zone { name: "dig site", centre: [-6.0, 15.5], half: ZONE_HALF };
 pub const HAZARDS: Zone = Zone { name: "hazards", centre: [6.0, 15.5], half: ZONE_HALF };
 pub const DEV: Zone = Zone { name: "dev", centre: [18.0, 15.5], half: ZONE_HALF };
 /// Open ground north of the ship (where the engineering zone stood): the scenarios stage tests there.
@@ -67,7 +69,7 @@ pub const OPEN_GROUND: [f64; 2] = [-18.0, 6.0];
 pub const PAD_ZONE: Zone = Zone { name: "pad", centre: [21.5, -14.5], half: [8.0, 9.0] };
 /// The pad where the flight ship parks (and where a downed walker respawns): the pad zone's centre.
 pub const PAD_MAIN: [f64; 2] = PAD_ZONE.centre;
-pub const ZONES: [Zone; 4] = [STORAGE, HAZARDS, DEV, PAD_ZONE];
+pub const ZONES: [Zone; 4] = [DIG_SITE, HAZARDS, DEV, PAD_ZONE];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlaceholderBox {
@@ -140,7 +142,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Update, spawn_devices.in_set(crate::phases::Frame::World));
     // One plugin per owner; the layout spawns the inner ship's walls and screens.
     app.add_plugins((ship::plugin, layout::plugin, hull::plugin, engineering::plugin, bridge::plugin, turrets::plugin));
-    app.add_plugins((crew::plugin, dev_asks::plugin, gear::plugin, equipment::plugin, fire::plugin, storage::plugin, hazards::plugin, dev::plugin));
+    app.add_plugins((crew::plugin, dev_asks::plugin, gear::plugin, equipment::plugin, fire::plugin, dig::plugin, storage::plugin, hazards::plugin, dev::plugin));
 }
 
 pub fn window_plugin(app: &mut App) {
@@ -150,6 +152,7 @@ pub fn window_plugin(app: &mut App) {
     engineering::junction_boxes::window_plugin(app);
     crew::window_plugin(app);
     fire::window_plugin(app);
+    dig::window_plugin(app);
 }
 
 pub fn box_pose(frame: &Frame, planet: &PlanetRes, b: &PlaceholderBox) -> (DVec3, DQuat) {
@@ -193,7 +196,7 @@ fn dress_boxes(mut commands: Commands, new: Query<(Entity, &DevBox), Added<DevBo
     for (e, b) in &new {
         // The reactor's drum is the model's (`engineering::reactor_room`); its box is only the collision.
         // The junction boxes' volumes are only collision and the repair's aim; the model is drawn by `engineering::junction_boxes`.
-        if b.id == layout::REACTOR || layout::is_junction_box(&b.id) {
+        if b.id == layout::REACTOR || layout::is_junction_box(&b.id) || dig::is_vein_box(&b.id) {
             continue;
         }
         let [r, g, bl] = b.colour;
@@ -207,7 +210,7 @@ fn dress_boxes(mut commands: Commands, new: Query<(Entity, &DevBox), Added<DevBo
 /// Zone colours on the ground. TODO(initiator): the look.
 fn zone_colour(z: &Zone) -> Color {
     match z.name {
-        "storage" => Color::srgb(0.7, 0.7, 0.62),
+        "dig site" => Color::srgb(0.55, 0.75, 0.25),
         "hazards" => Color::srgb(0.9, 0.2, 0.7),
         "dev" => Color::srgb(0.5, 0.5, 0.5),
         _ => Color::srgb(0.85, 0.85, 0.2),

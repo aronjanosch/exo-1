@@ -36,6 +36,7 @@ mod fire;
 mod fire_grid;
 mod extinguisher;
 mod dig;
+mod fabricator;
 mod repair;
 mod reactor;
 mod health;
@@ -641,6 +642,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "fire_grid" => fire_grid::fire_grid_steps(&mut s),
         "extinguisher" => extinguisher::extinguisher_steps(&mut s),
         "dig" => dig::dig_steps(&mut s, &shot_step),
+        "fabricator" => fabricator::fabricator_steps(&mut s, &shot_step),
         "repair" => repair::repair_steps(&mut s),
         "savefile" => savefile::savefile_steps(&mut s),
         "licence" => licence::licence_steps(&mut s),

@@ -50,7 +50,7 @@ fn oxygen(w: &World) -> Option<f64> {
 }
 
 /// A step that polls `done`, with a limit in simulated seconds.
-fn until(what: &'static str, limit: f64, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
+pub(super) fn until(what: &'static str, limit: f64, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             begin(w, c, what);

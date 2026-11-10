@@ -13,6 +13,7 @@ pub mod panels;
 pub mod canisters;
 pub mod canister_hum;
 pub mod junction_boxes;
+pub mod outside_core;
 pub mod reactor_room;
 pub mod start_stand;
 
@@ -21,7 +22,7 @@ pub fn plugin(app: &mut App) {
     app.add_plugins((asks::plugin, panels::plugin, coolant::plugin, canisters::plugin, reactor_room::plugin));
     app.init_resource::<blast::PendingBlasts>().init_resource::<blast::BlastFlash>();
     app.add_systems(FixedUpdate, blast::collect_blasts.in_set(ShipSet::React));
-    app.add_systems(FixedUpdate, (blast::reactor_blast, blast::client_blast_news, eject_notice, ecool_notice).chain().in_set(ShipSet::Effects));
+    app.add_systems(FixedUpdate, (blast::reactor_blast, blast::client_blast_news, outside_core::core_implosion, eject_notice, ecool_notice).chain().in_set(ShipSet::Effects));
 }
 
 pub fn eject_notice(items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: ResMut<Gameplay>) {
@@ -42,4 +43,5 @@ pub fn ecool_notice(items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: Res
 
 pub fn window_plugin(app: &mut App) {
     reactor_room::window_plugin(app);
+    app.add_systems(Update, outside_core::core_box.in_set(crate::phases::Frame::World));
 }

@@ -565,6 +565,11 @@ pub struct ReactorNews {
     /// The core ejects the host has applied so far (`ReactorCounts::ejects`). A process that sees
     /// it go up shows the CORE EJECTED notice once, as the blasts do.
     pub ejects: u32,
+    /// Seconds until the ejected core implodes outside the ship (#325); None when no core out there counts.
+    pub outside_eta_s: Option<f64>,
+    /// The outside implosions so far (`ReactorCounts::core_implosions`): a process that sees it go up shows the
+    /// flash and the notice once, the host hurts the players near the core.
+    pub core_implosions: u32,
     /// The SCRAM cover and the core eject cover stand open (#316): the host's physical parts, shown to every player.
     pub scram_cover: bool,
     pub eject_cover: bool,
@@ -906,6 +911,8 @@ mod tests {
             engine_thrust: 62.5,
             ejected: true,
             ejects: 3,
+            outside_eta_s: Some(61.5),
+            core_implosions: 2,
             scram_cover: true,
             eject_cover: true,
             scrams: 2,

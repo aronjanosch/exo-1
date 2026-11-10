@@ -29,11 +29,17 @@ pub struct Blast {
     pub radiation_range_m: f64,
     /// Radiation sickness, scaled by the players' max vitality (Barotrauma: 75).
     pub radiation: f64,
+    /// The ejected core's implosion outside the ship (#325): a body this far from it or further takes
+    /// nothing. TODO(initiator): the distance (start value 25 m).
+    pub safe_distance_m: f64,
+    /// The burn a body takes from it: full inside half `safe_distance_m`, falling to 0 at `safe_distance_m`.
+    /// TODO(initiator): the value.
+    pub outside_burn: f64,
 }
 
 impl Default for Blast {
     fn default() -> Blast {
-        Blast { min_fill: 1.0, range_m: 7.5, burn: 500.0, stun_s: 15.0, device_damage: 500.0, radiation_range_m: 20.0, radiation: 75.0 }
+        Blast { min_fill: 1.0, range_m: 7.5, burn: 500.0, stun_s: 15.0, device_damage: 500.0, radiation_range_m: 20.0, radiation: 75.0, safe_distance_m: 25.0, outside_burn: 500.0 }
     }
 }
 

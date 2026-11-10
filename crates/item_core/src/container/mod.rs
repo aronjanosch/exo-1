@@ -99,19 +99,31 @@ pub struct SlotRule {
     pub max_stack: u32,
     pub allow: BTreeSet<Tag>,
     pub deny: BTreeSet<Tag>,
+    /// Nobody puts anything in; the stack can be taken out (a machine's output place). The machine
+    /// itself fills it through `Container::machine_add`.
+    #[serde(default)]
+    pub take_only: bool,
+    /// Nothing goes in and nothing comes out (a machine's inputs while it runs).
+    #[serde(default)]
+    pub locked: bool,
 }
 
 impl SlotRule {
     pub fn any(max_stack: u32) -> SlotRule {
-        SlotRule { max_stack, allow: BTreeSet::new(), deny: BTreeSet::new() }
+        SlotRule { max_stack, allow: BTreeSet::new(), deny: BTreeSet::new(), take_only: false, locked: false }
     }
 
     pub fn tagged(max_stack: u32, allow: &[&str], deny: &[&str]) -> SlotRule {
-        SlotRule { max_stack, allow: allow.iter().map(|t| Tag::new(*t)).collect(), deny: deny.iter().map(|t| Tag::new(*t)).collect() }
+        SlotRule { max_stack, allow: allow.iter().map(|t| Tag::new(*t)).collect(), deny: deny.iter().map(|t| Tag::new(*t)).collect(), take_only: false, locked: false }
+    }
+
+    /// A place that only gives: refuses every put, lets the stack be taken.
+    pub fn take_only(max_stack: u32) -> SlotRule {
+        SlotRule { take_only: true, ..SlotRule::any(max_stack) }
     }
 
     pub fn accepts<P>(&self, item: &Item<P>) -> bool {
-        (self.allow.is_empty() || self.allow.iter().any(|t| item.has_tag(t))) && !self.deny.iter().any(|t| item.has_tag(t))
+        !self.take_only && !self.locked && (self.allow.is_empty() || self.allow.iter().any(|t| item.has_tag(t))) && !self.deny.iter().any(|t| item.has_tag(t))
     }
 
     pub fn cap<P>(&self, item: &Item<P>) -> u32 {
@@ -258,8 +270,58 @@ impl<P: Clone + PartialEq> Container<P> {
         }
     }
 
+    /// Locks or frees a place (see `SlotRule::locked`).
+    pub fn set_locked(&mut self, slot: usize, locked: bool) {
+        if let Some(r) = self.rules.get_mut(slot) {
+            r.locked = locked;
+        }
+    }
+
+    /// The machine puts a stack into a place, past `take_only` and `locked`; the item's tags and the
+    /// stack cap still hold. A refusal hands the stack back.
+    pub fn machine_add(&mut self, slot: usize, stack: Stack<P>) -> Result<(), Stack<P>> {
+        let Some(rule) = self.rules.get(slot) else { return Err(stack) };
+        let free = SlotRule { take_only: false, locked: false, ..rule.clone() };
+        let cap = free.cap(&stack.item);
+        if stack.count == 0 || !free.accepts(&stack.item) {
+            return Err(stack);
+        }
+        match &mut self.slots[slot] {
+            None if stack.count <= cap => self.slots[slot] = Some(stack),
+            Some(s) if s.item == stack.item && s.count + stack.count <= cap => s.count += stack.count,
+            _ => return Err(stack),
+        }
+        Ok(())
+    }
+
+    /// The machine removes `count` items of a kind from the places that hold it, past `locked`.
+    /// Takes all or nothing: returns false and changes nothing when there are fewer.
+    pub fn machine_remove(&mut self, kind: &ItemKind, count: u32) -> bool {
+        if self.count(kind) < count {
+            return false;
+        }
+        let mut left = count;
+        for cell in self.slots.iter_mut() {
+            if left == 0 {
+                break;
+            }
+            if let Some(s) = cell && &s.item.kind == kind {
+                let n = left.min(s.count);
+                s.count -= n;
+                left -= n;
+                if s.count == 0 {
+                    *cell = None;
+                }
+            }
+        }
+        true
+    }
+
     pub fn take(&mut self, carried: &[Tag], slot: usize, count: u32) -> Result<Stack<P>, Refusal> {
         self.check_access(carried)?;
+        if self.rules.get(slot).is_some_and(|r| r.locked) {
+            return Err(Refusal::Locked);
+        }
         let cell = self.slots.get_mut(slot).ok_or(Refusal::NoSuchSlot)?;
         let s = cell.take().ok_or(Refusal::EmptySlot)?;
         if count == 0 {
@@ -312,6 +374,9 @@ impl<P: Clone + PartialEq> Container<P> {
             return Err(Refusal::NothingToMove);
         }
         let Some(moving) = self.slots[from].clone() else { return Err(Refusal::EmptySlot) };
+        if self.rules[from].locked {
+            return Err(Refusal::Locked);
+        }
         if !self.rules[to].accepts(&moving.item) {
             return Err(Refusal::NotAllowed);
         }

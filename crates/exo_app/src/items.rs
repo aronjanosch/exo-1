@@ -395,6 +395,16 @@ impl Items {
         }
     }
 
+    /// Host: a machine changes its own rack (see `Host::edit_rack`); the clients hear the result.
+    pub fn edit_rack(&mut self, now: f64, rack: item_core::RackId, f: impl FnOnce(&mut item_core::container::Container)) {
+        if self.role == Role::Client {
+            return;
+        }
+        if let Some(ev) = self.host.edit_rack(rack, f) {
+            self.publish(now, ev, None);
+        }
+    }
+
     pub fn rest(&mut self, now: f64, item: LooseId, at: Placement, rot: [f64; 4], t: f64) {
         if let Some(ev) = self.host.rest(item, at, rot, t) {
             self.publish(now, ev, None);

@@ -292,6 +292,14 @@ impl Host {
         (before.floor() != after.floor()).then(|| Event::Rack { rack, contents: contents.clone() })
     }
 
+    /// A machine changes its own rack (fills its output, clears its inputs, locks a place); the event
+    /// tells the clients the rack as it is now. None when there is no such rack.
+    pub fn edit_rack(&mut self, rack: RackId, f: impl FnOnce(&mut Container)) -> Option<Event> {
+        let contents = self.racks.get_mut(&rack)?;
+        f(contents);
+        Some(Event::Rack { rack, contents: contents.clone() })
+    }
+
     /// The host's physics reports where a loose item is now (no event; a client that joins later
     /// gets this placement).
     pub fn track(&mut self, item: LooseId, at: Placement) {

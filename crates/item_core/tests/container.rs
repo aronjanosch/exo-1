@@ -257,3 +257,58 @@ fn random_moves_never_lose_or_duplicate_an_item() {
         }
     }
 }
+
+/// A machine's rack: two input places for ore, one output place that only gives.
+fn machine_rack() -> Container {
+    Container::new(vec![SlotRule::tagged(3, &["ore"], &[]), SlotRule::tagged(3, &["ore"], &[]), SlotRule::take_only(4)], Access::Open)
+}
+
+fn ore() -> Item {
+    Item::new("grumblite", &["medium", "ore"], 3)
+}
+
+fn part() -> Item {
+    Item::new("fuse", &["small", "part"], 4)
+}
+
+#[test]
+fn nobody_puts_into_a_take_only_place_but_everybody_takes_from_it() {
+    let mut c = machine_rack();
+    assert_eq!(c.insert_at(&[], 2, stack(part(), 1)).unwrap_err().why, Refusal::NotAllowed);
+    assert_eq!(c.try_insert(&[], stack(part(), 1)).unwrap_err().why, Refusal::NotAllowed, "the inputs take ore only, the output nothing");
+    assert!(c.machine_add(2, stack(part(), 1)).is_ok(), "the machine fills it");
+    c.insert_at(&[], 0, stack(ore(), 1)).unwrap();
+    assert_eq!(c.move_slot(&[], 0, 2).unwrap_err(), Refusal::NotAllowed, "a stack cannot be moved onto it");
+    assert_eq!(c.take(&[], 2, 1).unwrap().item.kind.as_str(), "fuse");
+    assert!(c.slot(2).is_none());
+}
+
+#[test]
+fn a_locked_place_gives_and_takes_nothing_until_it_is_freed() {
+    let mut c = machine_rack();
+    c.insert_at(&[], 0, stack(ore(), 2)).unwrap();
+    c.set_locked(0, true);
+    assert_eq!(c.take(&[], 0, 1).unwrap_err(), Refusal::Locked);
+    assert_eq!(c.insert_at(&[], 0, stack(ore(), 1)).unwrap_err().why, Refusal::NotAllowed);
+    assert_eq!(c.move_slot(&[], 0, 1).unwrap_err(), Refusal::Locked);
+    assert_eq!(c.slot(0).unwrap().count, 2, "nothing changed");
+    assert!(c.machine_remove(&ItemKind::new("grumblite"), 2), "the machine itself still reaches it");
+    assert!(c.slot(0).is_none());
+    c.set_locked(0, false);
+    c.insert_at(&[], 0, stack(ore(), 1)).unwrap();
+}
+
+#[test]
+fn the_machine_removes_all_or_nothing_across_places() {
+    let mut c = machine_rack();
+    c.insert_at(&[], 0, stack(ore(), 1)).unwrap();
+    c.insert_at(&[], 1, stack(ore(), 2)).unwrap();
+    let kind = ItemKind::new("grumblite");
+    assert!(!c.machine_remove(&kind, 4), "four are not there");
+    assert_eq!(c.count(&kind), 3, "nothing was taken");
+    assert!(c.machine_remove(&kind, 2));
+    assert_eq!(c.count(&kind), 1);
+    assert!(c.machine_add(2, stack(part(), 5)).is_err(), "past the cap of 4 nothing goes in");
+    assert!(c.machine_add(2, stack(part(), 4)).is_ok());
+    assert!(c.machine_add(2, stack(part(), 1)).is_err(), "full");
+}

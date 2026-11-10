@@ -101,7 +101,7 @@ pub fn plugin(app: &mut App) {
             specs.0.push(ContainerSpec { rack, name: NAME.into(), box_id: String::new(), cols: COLS });
         }
     }
-    app.add_systems(FixedUpdate, (spawn_tubs, tub_step).chain().before(crate::interact::interaction).in_set(crate::phases::Fx::Walker));
+    app.add_systems(FixedUpdate, (spawn_tubs.run_if(resource_exists::<DevArea>), tub_step).chain().before(crate::interact::interaction).in_set(crate::phases::Fx::Walker));
 }
 
 pub fn window_plugin(app: &mut App) {

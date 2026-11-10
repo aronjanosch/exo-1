@@ -1,4 +1,5 @@
 pub mod devices;
+pub mod fabricator;
 pub mod ingredient;
 pub mod lab;
 pub mod mixing;

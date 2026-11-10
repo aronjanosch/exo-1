@@ -104,6 +104,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 | `extinguisher` | The extinguisher's supply: wear, empty, refill at the corridor rack. |
 | `dig` | The dig run (#324): cut a chunk of ore with the welder, pick it up, store it in Crate B; no breath inside the dig site without a suit, none lost outside. |
 | `fabricator` | The fabricator (#326): ore into the input places through the container path, F on the push button, a fuse in the output place and the inputs gone; one ore is no recipe and the button refuses; a power cut pauses a run and it resumes. |
+| `ore_tub` | The ore tub (#327): fill the standing tub through the container window, carry it (no window, no Open while carried), a full tub walks slower than an empty one, the load survives a save, the object budget keeps tubs, empty it into Crate B; nothing lost. |
 | `repair` | Repair at the junction box by holding, with the ring off (the pump has no housing now). |
 | `savefile` | Save, restart, load: the state that must survive comes back. |
 | `licence` | The seat refuses without the flight licence; the exam at the flight school passes and the seat works. |

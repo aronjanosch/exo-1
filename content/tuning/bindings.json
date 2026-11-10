@@ -55,6 +55,7 @@
   "abandon_job": ["KeyY"],
   "display_leave": ["Escape"],
   "drop": ["KeyG"],
+  "carry": ["KeyZ"],
   "inventory": ["Tab"],
   "slot_1": ["Digit1"],
   "slot_2": ["Digit2"],

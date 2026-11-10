@@ -295,3 +295,30 @@ fn impact_speed_matches_the_fall() {
     }
     assert!(drop_impact(0.0) < 0.5, "settling on the floor is a tiny impact at most");
 }
+
+#[test]
+fn a_standalone_row_sits_outside_the_doubling() {
+    let row = |name: &str, e: f64, standalone: bool| format!(r#"{{"name":"{name}","extents":[{e},{e},{e}],"mass":10.0,"hands":2,"holders":1,"standalone":{standalone}}}"#);
+    let doc = |rows: &[String]| format!(r#"{{"sizes":[{}]}}"#, rows.join(","));
+    // Between rows of the series, and the next row still doubles from the one before it.
+    let ok = CrateTable::from_json(&doc(&[row("a", 0.5, false), row("tub", 0.6, true), row("b", 1.0, false)])).unwrap();
+    assert_eq!(ok.sizes.len(), 3);
+    assert!(CrateTable::from_json(&doc(&[row("a", 0.5, false), row("tub", 0.6, true), row("b", 1.2, false)])).unwrap_err().contains("double"));
+    // Without the flag the row must double.
+    assert!(CrateTable::from_json(&doc(&[row("a", 0.5, false), row("tub", 0.6, false)])).unwrap_err().contains("double"));
+}
+
+#[test]
+fn the_load_speed_share_stays_between_full_and_empty() {
+    assert_eq!(load_speed_share(0, 6, 0.7), 1.0);
+    assert!((load_speed_share(6, 6, 0.7) - 0.7).abs() < 1e-12);
+    assert!((load_speed_share(3, 6, 0.7) - 0.85).abs() < 1e-12, "linear by places used");
+    assert_eq!(load_speed_share(9, 6, 0.7), load_speed_share(6, 6, 0.7), "more than full counts as full");
+    assert_eq!(load_speed_share(0, 0, 0.7), 1.0, "no places, no load");
+    for full in [f64::NAN, f64::INFINITY, -1.0, 2.0, 0.0] {
+        for used in 0..8 {
+            let s = load_speed_share(used, 6, full);
+            assert!(s.is_finite() && (0.0..=1.0).contains(&s), "{full} {used}: {s}");
+        }
+    }
+}

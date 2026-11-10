@@ -483,13 +483,14 @@ const CRATE_COLOURS: [(f32, f32, f32); 3] = [(0.95, 0.8, 0.15), (0.2, 0.75, 0.65
 pub fn add_crate_visuals(
     mut commands: Commands,
     q: Query<(Entity, &Crate), Added<Crate>>,
+    tubs: Query<(), With<crate::ore_tub::Tub>>,
     table: Res<Crates>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for (e, c) in &q {
-        if c.item {
-            continue; // `items` dresses its own
+        if c.item || tubs.contains(e) {
+            continue; // `items` dresses its own; so does the ore tub
         }
         let s = &table.0.sizes[c.size];
         let (r, g, b) = CRATE_COLOURS[c.size % CRATE_COLOURS.len()];
@@ -605,6 +606,7 @@ pub fn budget_step(
     ships: Query<(Entity, &Position, &Rotation), With<Ship>>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
     mut crates: Query<(Entity, &mut Crate)>,
+    tubs: Query<(), With<crate::ore_tub::Tub>>,
 ) {
     let now = time.elapsed_secs_f64();
     let Some((ship_e, sp, sr)) = ships.iter().next() else { return };
@@ -618,7 +620,8 @@ pub fn budget_step(
             let (pos, _) = crate_world(&c, &frame);
             grab_core::budget::Obj {
                 id: e.to_bits(),
-                protected: held == Some(e) || c.locked || c.ship.is_some() || c.item,
+                // An ore tub carries a load that is saved with it: it never goes (#327).
+                protected: held == Some(e) || c.locked || c.ship.is_some() || c.item || tubs.contains(e),
                 idle: now - touched,
                 distance: pos.distance(walker).min(pos.distance(sp.0)),
                 resting: c.body.asleep,

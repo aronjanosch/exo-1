@@ -60,6 +60,8 @@ pub struct Grab {
     /// Throws: (crate, world velocity right after the throw).
     pub throws: Vec<(Entity, DVec3)>,
     pub last_hold: Option<HoldError>,
+    /// Share of the walk speed the held crate's load takes away (0..1; the ore tub, #327).
+    pub load_loss: f64,
 }
 
 impl Grab {
@@ -79,11 +81,14 @@ impl Grab {
     pub fn release(&mut self) {
         self.last_hold = self.held.map(|h| h.err);
         self.held = None;
+        self.load_loss = 0.0;
         self.reaction = DVec3::ZERO;
     }
 
     pub fn carry(&self, cfg: &GrabConfig) -> grab_core::Carry {
-        grab_core::carry(cfg, self.held.map_or(0, |h| h.hands))
+        let mut c = grab_core::carry(cfg, self.held.map_or(0, |h| h.hands));
+        c.speed_share *= 1.0 - self.load_loss.clamp(0.0, 1.0);
+        c
     }
 }
 

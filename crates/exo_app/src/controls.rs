@@ -138,6 +138,8 @@ pub enum Tap {
     AbandonJob,
     DisplayLeave,
     Drop,
+    /// Takes a standing ore tub in both hands (F opens it, #327). TODO(initiator): the key (Z for now).
+    Carry,
     Inventory,
     /// Take a slot of the action bar into the hand (1 to 8; while the dev menu is open the digits
     /// run its commands instead).
@@ -179,7 +181,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 53] = [
+    pub const ALL: [Tap; 54] = [
         Tap::Help,
         Tap::DevMenu,
         Tap::Dev1,
@@ -224,6 +226,7 @@ impl Tap {
         Tap::AbandonJob,
         Tap::DisplayLeave,
         Tap::Drop,
+        Tap::Carry,
         Tap::Inventory,
         Tap::Slot1,
         Tap::Slot2,
@@ -283,6 +286,7 @@ impl Tap {
             Tap::AbandonJob => "abandon_job",
             Tap::DisplayLeave => "display_leave",
             Tap::Drop => "drop",
+            Tap::Carry => "carry",
             Tap::Inventory => "inventory",
             Tap::Slot1 => "slot_1",
             Tap::Slot2 => "slot_2",
@@ -472,6 +476,7 @@ impl Bindings {
                 (_, Some(v)) => keys(t.name(), v),
                 (_, None) if Tap::KEYLESS.contains(&t) => Ok(Vec::new()),
                 (Tap::Drop, None) => Ok(vec![Input::Key(KeyCode::KeyG)]),
+                (Tap::Carry, None) => Ok(vec![Input::Key(KeyCode::KeyZ)]),
                 (Tap::Inventory, None) => Ok(vec![Input::Key(KeyCode::Tab)]),
                 (_, None) if Tap::SLOTS.contains(&t) => Ok(vec![Input::Key([KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8][Tap::SLOTS.iter().position(|x| *x == t).unwrap()])]),
                 (Tap::Interact, None) if obj.contains_key("seat") => keys("seat", &obj["seat"]),

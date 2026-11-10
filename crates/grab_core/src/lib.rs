@@ -19,6 +19,10 @@ pub struct CrateSize {
     pub hands: u8,
     /// Players it takes to lift it (the hold caps add up).
     pub holders: u8,
+    /// A purpose-built crate (the ore tub, #327): its edges are its own, outside the doubling
+    /// series of the standard sizes.
+    #[serde(default)]
+    pub standalone: bool,
 }
 
 impl CrateSize {
@@ -27,7 +31,7 @@ impl CrateSize {
     }
 }
 
-/// `content/cargo/crates.json`: sizes whose edges double from row to row.
+/// `content/cargo/crates.json`: sizes whose edges double from row to row (standalone rows aside).
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CrateTable {
@@ -57,8 +61,7 @@ impl CrateTable {
             if t.sizes[..i].iter().any(|o| o.name == z.name) {
                 return Err(format!("{at}: name used twice"));
             }
-            if i > 0 {
-                let prev = &t.sizes[i - 1];
+            if let Some(prev) = t.sizes[..i].iter().rev().find(|o| !o.standalone).filter(|_| !z.standalone) {
                 if (0..3).any(|k| (z.extents[k] / prev.extents[k] - 2.0).abs() > 1e-6) {
                     return Err(format!("{at}: edges must double from '{}'", prev.name));
                 }
@@ -258,6 +261,18 @@ pub fn carry(cfg: &GrabConfig, hands: u8) -> Carry {
     } else {
         Carry { speed_share: 1.0, can_run: true, can_jump: true }
     }
+}
+
+/// Walk-speed share left by a carried container's load (the ore tub, #327): 1 empty, `full_share`
+/// with every place used, linear between. Out-of-range input is clamped, so the result is always
+/// within `full_share..=1` (and 1 for a container without places).
+pub fn load_speed_share(used: usize, places: usize, full_share: f64) -> f64 {
+    let full = if full_share.is_finite() { full_share.clamp(0.0, 1.0) } else { 1.0 };
+    if places == 0 {
+        return 1.0;
+    }
+    let fill = (used.min(places) as f64) / places as f64;
+    1.0 - fill * (1.0 - full)
 }
 
 /// Distance to `target` if it lies within `half_angle` (radians) of `look` and `max_dist` of `eye`.

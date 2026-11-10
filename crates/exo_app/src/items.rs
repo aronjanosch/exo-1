@@ -546,7 +546,7 @@ pub fn slot_at(p: Vec2, open: bool, window: Vec2, look: &display_core::hud::BarL
 /// The shape of an item as a body (`grab_core`'s crate size; one holder).
 pub fn body_size(defs: &ItemDefs, id: &str) -> Option<CrateSize> {
     let d = defs.get(id)?;
-    Some(CrateSize { name: d.id.clone(), extents: d.shape.extents, mass: d.shape.mass, hands: d.hands, holders: 1 })
+    Some(CrateSize { name: d.id.clone(), extents: d.shape.extents, mass: d.shape.mass, hands: d.hands, holders: 1, standalone: false })
 }
 
 /// Where the walker's hand is, as a placement in its frame (the cabin or the planet), moving at

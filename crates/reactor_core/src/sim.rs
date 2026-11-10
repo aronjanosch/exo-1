@@ -530,6 +530,7 @@ fn label(e: &RoomEvent) -> String {
         RoomEvent::Reactor(ReactorEvent::Implosion) => "Implosion".into(),
         RoomEvent::Reactor(ReactorEvent::Blast(_)) => "Blast".into(),
         RoomEvent::Reactor(ReactorEvent::CoreEjected) => "CoreEjected".into(),
+        RoomEvent::Reactor(ReactorEvent::CoreImplodedOutside) => "CoreImplodedOutside".into(),
         RoomEvent::Reactor(ReactorEvent::Alarm { kind, on }) => {
             format!("Alarm {kind:?} {}", if *on { "on" } else { "off" })
         }

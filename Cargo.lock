@@ -2569,6 +2569,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dig_core"
+version = "0.1.0"
+dependencies = [
+ "content_core",
+ "serde",
+]
+
+[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2770,6 +2778,7 @@ dependencies = [
  "crew_core",
  "daynight_core",
  "device_core",
+ "dig_core",
  "display_core",
  "fire_core",
  "flight_core",

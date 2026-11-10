@@ -32,4 +32,5 @@ container_core = { workspace = true }
 reactor_core = { workspace = true }
 device_core = { workspace = true }
 controls_core = { workspace = true }
+dig_core = { workspace = true }
 serde_json = { workspace = true }

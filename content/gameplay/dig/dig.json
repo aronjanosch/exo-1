@@ -1,0 +1,13 @@
+{
+  "_comment": "The dig run (#324): ore veins cut with the welder. Every number is a starting value, TODO(initiator). cut_s: seconds of holding the cut on one spot until a chunk comes off. cool_per_s: heat (0..1) lost per second when the cut is let go. chunks: chunks a full vein holds. regrow_s: seconds an empty vein takes to be full again. reach_m: how far the welder reaches (m). veins: ore item id and the spot, in metres from the dig site's centre (x east, y north).",
+  "cut_s": 2.5,
+  "cool_per_s": 0.5,
+  "chunks": 8,
+  "regrow_s": 300.0,
+  "reach_m": 2.5,
+  "veins": [
+    { "ore": "grumblite", "at": [-3.0, 0.0] },
+    { "ore": "snoozium", "at": [0.5, 1.5] },
+    { "ore": "wobble_quartz", "at": [3.5, -0.5] }
+  ]
+}

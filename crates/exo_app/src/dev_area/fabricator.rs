@@ -357,7 +357,7 @@ fn dress_fab(mut commands: Commands, new: Query<(Entity, &FabMachine), Added<Fab
         part(&mut commands, e, &steel, [0.0, 0.3, FRONT_Z + 0.008], [0.96, 0.42, 0.016]);
         part(&mut commands, e, &dark, [0.0, 0.46, FRONT_Z + 0.03], [0.3, 0.03, 0.03]);
         // The screen's frame and the button with its collar.
-        part(&mut commands, e, &dark, [SCREEN_AT[0], SCREEN_AT[1], FRONT_Z + 0.001], [SCREEN_SIZE[0] as f32 + 0.04, SCREEN_SIZE[1] as f32 + 0.04, 0.004]);
+        part(&mut commands, e, &dark, [SCREEN_AT[0], SCREEN_AT[1], FRONT_Z + 0.0005], [SCREEN_SIZE[0] as f32 + 0.04, SCREEN_SIZE[1] as f32 + 0.04, 0.002]);
         part(&mut commands, e, &steel, [BUTTON_AT[0], BUTTON_AT[1], FRONT_Z + 0.01], [0.13, 0.13, 0.02]);
         let cap = part(&mut commands, e, &amber, [BUTTON_AT[0], BUTTON_AT[1], BUTTON_AT[2] - 0.01], [0.09, 0.09, 0.04]);
         commands.entity(cap).insert(ButtonCap);
@@ -379,8 +379,8 @@ fn drive_fab(
         if let Some(mat) = mat
             && let Some(mut m) = materials.get_mut(&mat.0)
         {
-            m.emissive = LinearRgba::rgb(GLOW_COLOUR[0] * 6.0 * level, GLOW_COLOUR[1] * 6.0 * level, GLOW_COLOUR[2] * 6.0 * level);
-            m.base_color = Color::srgb(0.1 + 0.9 * level, 0.05 + 0.5 * level, 0.02 + 0.15 * level);
+            m.emissive = LinearRgba::rgb(GLOW_COLOUR[0] * 1.8 * level, GLOW_COLOUR[1] * 1.8 * level, GLOW_COLOUR[2] * 1.8 * level);
+            m.base_color = Color::srgb(0.1 + 0.5 * level, 0.05 + 0.25 * level, 0.02 + 0.05 * level);
         }
         if let Some(mut l) = light {
             l.intensity = GLOW_LIGHT * level;

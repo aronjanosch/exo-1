@@ -321,9 +321,13 @@ struct DigSounds {
 }
 
 /// The haze over the site: its height (m) and colour. TODO(initiator): the look.
-const HAZE_HEIGHT: f32 = 0.6;
-const HAZE_COLOUR: [f32; 4] = [0.45, 0.72, 0.2, 0.3];
-const ROCK_COLOUR: [f32; 3] = [0.34, 0.32, 0.30];
+/// Thin sheets stacked above the ground, as (height, alpha): the haze thins out upward, so a rock
+/// fades into it instead of meeting a hard line.
+const HAZE_LAYERS: [(f32, f32); 3] = [(0.04, 0.30), (0.3, 0.16), (0.6, 0.08)];
+const HAZE_COLOUR: [f32; 3] = [0.55, 0.75, 0.15];
+/// Mid grey-brown, with a little emissive of its own so the shaded sides keep their form.
+const ROCK_COLOUR: [f32; 3] = [0.5, 0.45, 0.4];
+const ROCK_GLOW: f32 = 0.06;
 /// The flash when a chunk comes off: its life (s) and its light.
 const FLASH_LIFE_S: f32 = 0.22;
 const FLASH_LIGHT: f32 = 400_000.0;
@@ -377,12 +381,12 @@ fn dig_visuals(
         vis.glows.clear();
         vis.prev.clear();
         let cube = meshes.add(Cuboid::new(1.0, 1.0, 1.0));
-        let rock = materials.add(StandardMaterial { base_color: Color::srgb(ROCK_COLOUR[0], ROCK_COLOUR[1], ROCK_COLOUR[2]), perceptual_roughness: 1.0, ..default() });
+        let rock = materials.add(StandardMaterial { base_color: Color::srgb(ROCK_COLOUR[0], ROCK_COLOUR[1], ROCK_COLOUR[2]), emissive: LinearRgba::rgb(ROCK_GLOW * 1.2, ROCK_GLOW, ROCK_GLOW * 0.8), perceptual_roughness: 1.0, ..default() });
         let stub_mat = materials.add(StandardMaterial { base_color: Color::srgb(0.1, 0.1, 0.11), perceptual_roughness: 1.0, ..default() });
         for v in &cfg.0.veins {
             let (g, up) = place(v.at, 0.0);
             let colour = items.defs.get(&v.ore).map_or([0.8, 0.8, 0.8], |d| d.shape.colour);
-            let seam = materials.add(StandardMaterial { base_color: Color::srgb(colour[0], colour[1], colour[2]), emissive: LinearRgba::rgb(colour[0] * 0.5, colour[1] * 0.5, colour[2] * 0.5), perceptual_roughness: 0.5, ..default() });
+            let seam = materials.add(StandardMaterial { base_color: Color::srgb(colour[0], colour[1], colour[2]), emissive: LinearRgba::rgb(colour[0] * 1.2, colour[1] * 1.2, colour[2] * 1.2), perceptual_roughness: 0.4, ..default() });
             let part = |commands: &mut Commands, parent: Entity, mat: &Handle<StandardMaterial>, at: Vec3, size: Vec3, turn: f32| {
                 let e = commands.spawn((Mesh3d(cube.clone()), MeshMaterial3d(mat.clone()), Transform { translation: at, rotation: Quat::from_rotation_y(turn), scale: size })).id();
                 commands.entity(parent).add_child(e);
@@ -400,11 +404,14 @@ fn dig_visuals(
             part(&mut commands, stub, &stub_mat, Vec3::new(0.0, 0.1, 0.0), Vec3::new(1.0, 0.2, 0.9), 0.3);
             vis.veins.push(VeinVis { cluster, stub });
         }
-        // The haze: one translucent box over the site, drawn from both sides.
-        let (g, up) = frame.ground(&planet, DIG_SITE.centre[0], DIG_SITE.centre[1], HAZE_HEIGHT as f64 * 0.5);
-        let haze_mesh = meshes.add(Cuboid::new(DIG_SITE.half[0] as f32 * 2.0, HAZE_HEIGHT, DIG_SITE.half[1] as f32 * 2.0));
-        let haze_mat = materials.add(StandardMaterial { base_color: Color::srgba(HAZE_COLOUR[0], HAZE_COLOUR[1], HAZE_COLOUR[2], HAZE_COLOUR[3]), unlit: true, alpha_mode: AlphaMode::Blend, cull_mode: None, double_sided: true, ..default() });
-        commands.spawn((Mesh3d(haze_mesh), MeshMaterial3d(haze_mat), Transform::from_rotation(frame.rotation(up, 0.0).as_quat()), crate::origin::WorldPos(g)));
+        // The haze: thin double-sided sheets over the site, so the ground tints from above and the
+        // air from the side, thinner the higher.
+        let sheet = meshes.add(Cuboid::new(DIG_SITE.half[0] as f32 * 2.0, 0.01, DIG_SITE.half[1] as f32 * 2.0));
+        for (h, alpha) in HAZE_LAYERS {
+            let (g, up) = frame.ground(&planet, DIG_SITE.centre[0], DIG_SITE.centre[1], h as f64);
+            let mat = materials.add(StandardMaterial { base_color: Color::srgba(HAZE_COLOUR[0], HAZE_COLOUR[1], HAZE_COLOUR[2], alpha), unlit: true, alpha_mode: AlphaMode::Blend, cull_mode: None, double_sided: true, ..default() });
+            commands.spawn((Mesh3d(sheet.clone()), MeshMaterial3d(mat), Transform::from_rotation(frame.rotation(up, 0.0).as_quat()), crate::origin::WorldPos(g), bevy::light::NotShadowCaster, bevy::light::NotShadowReceiver));
+        }
         let ball = meshes.add(Sphere::new(0.5));
         for _ in 0..MAX_CUTS {
             let mat = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.8, 0.5), emissive: LinearRgba::rgb(8.0, 3.0, 0.6), unlit: true, ..default() });

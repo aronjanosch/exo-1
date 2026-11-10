@@ -322,7 +322,7 @@ struct DigSounds {
 
 /// The haze over the site: its height (m) and colour. TODO(initiator): the look.
 const HAZE_HEIGHT: f32 = 0.6;
-const HAZE_COLOUR: [f32; 4] = [0.45, 0.72, 0.2, 0.22];
+const HAZE_COLOUR: [f32; 4] = [0.45, 0.72, 0.2, 0.3];
 const ROCK_COLOUR: [f32; 3] = [0.34, 0.32, 0.30];
 /// The flash when a chunk comes off: its life (s) and its light.
 const FLASH_LIFE_S: f32 = 0.22;

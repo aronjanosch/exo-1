@@ -68,7 +68,7 @@ fn until(what: &'static str, limit: f64, mut done: impl FnMut(&mut World) -> boo
     })
 }
 
-pub(super) fn dig_steps(s: &mut Vec<Step>) {
+pub(super) fn dig_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "dig: the welder in the hand at the first vein");
@@ -93,10 +93,10 @@ pub(super) fn dig_steps(s: &mut Vec<Step>) {
     s.push(wait(0.5));
     s.push(tap_then("dig: 1 takes the welder into the hand", KeyCode::Digit1, |w| items(w).in_hand(0).is_some_and(|s| s.item.kind.as_str() == "welder")));
 
-    // Hold LMB on the vein until a chunk lies on the ground.
+    // Hold LMB on the vein: the spot heats up (a picture of the glow), then a chunk lies on the ground.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
-            begin(w, c, "dig: LMB held on the vein cuts a chunk");
+            begin(w, c, "dig: LMB held on the vein heats the spot");
             let v = vein_at(w);
             let at = ground(w, v, 0.6);
             look_at(w, at);
@@ -105,11 +105,24 @@ pub(super) fn dig_steps(s: &mut Vec<Step>) {
             lmb(w, true);
             return false;
         }
-        if !c.v.contains_key("hot") && c.t >= 1.0 {
-            c.v.insert("hot", 1.0);
-            let heat = w.resource::<DigState>().veins[0].heat;
-            let news = items(w).dig.news.as_ref().map(|n| (n.cuts.len(), n.veins[0].heat));
-            check(c, heat > 0.1 && news.is_some_and(|n| n.0 == 1 && n.1 > 100), format!("dig: the spot heats up while it is held (heat {heat:.2}, news {news:?})"));
+        let heat = w.resource::<DigState>().veins[0].heat;
+        let news = items(w).dig.news.as_ref().map(|n| (n.cuts.len(), n.veins[0].heat));
+        if heat > 0.7 {
+            check(c, news.is_some_and(|n| n.0 == 1 && n.1 > 500), format!("dig: the spot heats up while it is held (heat {heat:.2}, news {news:?})"));
+            end(w, c, format!("{:.1} s", c.t));
+            return true;
+        }
+        if c.t >= 6.0 {
+            lmb(w, false);
+            check(c, false, format!("dig: the spot did not heat in 6 s ({heat:.2})"));
+            return true;
+        }
+        false
+    }));
+    s.push(shot_step("dig-cut"));
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "dig: LMB held on the vein cuts a chunk");
         }
         if super::items::outside(w, ORE).is_some() {
             lmb(w, false);
@@ -119,9 +132,9 @@ pub(super) fn dig_steps(s: &mut Vec<Step>) {
             end(w, c, format!("{:.1} s", c.t));
             return true;
         }
-        if c.t >= 12.0 {
+        if c.t >= 8.0 {
             lmb(w, false);
-            check(c, false, "dig: no chunk within 12 s".into());
+            check(c, false, "dig: no chunk within 8 s".into());
             return true;
         }
         false
@@ -203,4 +216,16 @@ pub(super) fn dig_steps(s: &mut Vec<Step>) {
         place_walker(w, at);
         true
     }));
+    // A picture of the site from its edge: the haze, the veins (one a chunk smaller).
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "dig: the site from its edge");
+            let at = ground(w, [DIG_SITE.centre[0] + 1.0, DIG_SITE.centre[1] - DIG_SITE.half[1] - 3.5], 0.3);
+            place_walker(w, at);
+            let v = ground(w, DIG_SITE.point([0.5, 1.5]), 0.8);
+            look_at(w, v);
+        }
+        c.t >= 0.8
+    }));
+    s.push(shot_step("dig-site"));
 }

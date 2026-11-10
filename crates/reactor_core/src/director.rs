@@ -1,104 +1,73 @@
-//! The incident director (r38): breaks one device of the engine room at random intervals, and
-//! breaks none while the room is already in trouble. A port of two Barotrauma rules, simplified.
+//! The incident director (#328): things on the ship break by themselves, one at a time, while the crew is busy.
+//! Two kinds only: a junction box faults (it breaks at once, sparks, maybe a small fire), or a machine catches fire
+//! (the reactor or the coolant pump). Everything the older director could do (pump break, surge, hull breach,
+//! hits) stays parked; the room's `Fault`s are still there for the dev menu.
 //!
-//! Sources (`/home/agent/exo-research/barotrauma/source/Barotrauma/BarotraumaShared/SharedSource/Events/`):
-//! - Which items, how picked: `MalfunctionEvent.cs:44-50` takes items that still work (Condition > 0)
-//!   and picks at random; `:65-67` breaks them at once when the duration is 0 (ours: all faults are
-//!   at once). Here the candidates are the room's six `Fault`s (`CANDIDATES`); the two outside hits
-//!   (r41) are always open.
-//! - Intensity, the terms: `EventManager.cs:1119-1124` (a fire of any size is 20 %, the hull's holes)
-//!   and `:1139-1143`: the three terms averaged, plus fire at half weight, clamped to 0..1. Ours: the
-//!   broken machines, the bad air and the critical heat band for the three, `FIRE_SHARE` per fire.
-//! - Rise and fall: `EventManager.cs:38` (update every 5 s) and `:1145-1157` (0.04 per second up,
-//!   0.0025 per second down; `rise_per_s`, `fall_per_s`).
-//! - Waiting: `EventManager.cs:919-920`, an event starts only when the cooldown is over and the
-//!   intensity is at or below the threshold. The threshold starts at `DefaultEventThreshold` 0.2
-//!   (`EventManager.cs:60`, the Easiest row of `content/EventManagerSettings.xml`).
-//! - Cooldown: `EventCooldown` 60 s between events (the same XML). Ours: the interval is random
-//!   between `min_interval_s` and `max_interval_s`, a seeded pick.
+//! Pacing: the first incident after `first_s`, then a random wait between `min_interval_s` and `max_interval_s`.
+//! The wait only runs down while the ship is calm: never a new incident while a box is blown, a fire burns, or the
+//! reactor's implosion countdown runs. Seeded, so the same seed gives the same sequence.
 //!
-//! Not ported: the threshold's drift (`EventThresholdIncrease`, `EventManager.cs:899-900`) and its
-//! reset after each event (`:926-934`); the threshold is one value. TODO(initiator).
+//! The older intensity model (Barotrauma's `EventManager` threshold, port of r38) is dropped: "calm" is those three
+//! plain rules, so there are fewer knobs. TODO(initiator): say if the intensity should come back.
 use gameplay_core::rng::Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::engine_room::{EngineRoom, Fault};
+use crate::engine_room::{Source, JUNCTIONS};
 
-/// The faults the director picks from (the room's existing faults; Barotrauma's coolant leak is the
-/// pump's damage, so it is PumpBreak here, not a fifth entry). The two outside hits (r41) are picks too:
-/// a light and a heavy hit on the wall, as the dev faults. TODO(initiator): weights are equal.
-pub const CANDIDATES: [Fault; 6] = [Fault::PumpBreak, Fault::Surge, Fault::OxygenGeneratorBreak, Fault::HullBreach, Fault::HitLight, Fault::HitHeavy];
-
-/// Barotrauma's fire share: any fire is 20 % (`EventManager.cs:1124`), and the fire term counts at half
-/// weight (`:1141`).
-const FIRE_SHARE: f64 = 0.2;
-const FIRE_WEIGHT: f64 = 0.5;
-/// Oxygen at or below this share is bad air: the status monitor's line (display_core monitor, Barotrauma
-/// 30 %). The bad-air term ramps from 0 at this line to 1 at no oxygen.
-const BAD_AIR: f64 = 0.3;
-/// The machines the broken term counts: reactor, pump, junction box, oxygen generator.
-const MACHINES: f64 = 4.0;
-
-/// `director` in incidents/director.json. Start values, TODO(initiator): see the module doc for their sources.
+/// `director` in incidents/director.json. Start values, TODO(initiator).
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DirectorTuning {
-    /// On at the start (the dev faults screen's DIRECTOR toggle sets it in play).
+    /// On at the start (the dev menu's "Director: on/off" sets it in play).
     pub enabled: bool,
+    /// Calm seconds before the first incident.
+    pub first_s: f64,
+    /// The random wait between incidents, calm seconds.
     pub min_interval_s: f64,
     pub max_interval_s: f64,
-    /// The intensity at or below which a fault may fire.
-    pub threshold: f64,
-    /// The intensity's climb and fall, per second (`EventManager.cs:1145-1157`).
-    pub rise_per_s: f64,
-    pub fall_per_s: f64,
+    /// A faulting junction box starts a small fire with this chance, 0..1.
+    pub fire_chance: f64,
 }
 
 impl Default for DirectorTuning {
     fn default() -> DirectorTuning {
-        DirectorTuning { enabled: false, min_interval_s: 60.0, max_interval_s: 180.0, threshold: 0.2, rise_per_s: 0.04, fall_per_s: 0.0025 }
+        DirectorTuning { enabled: false, first_s: 180.0, min_interval_s: 150.0, max_interval_s: 330.0, fire_chance: 0.25 }
     }
 }
 
-/// What the room reports, as plain numbers and the faults it can take now.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// What the director does to the room; the host turns it into the room's calls and events.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Incident {
+    /// Box `index` breaks at once (`EngineRoom::blow_junction`); with `fire`, a small fire starts at its spark point.
+    JunctionFault { index: usize, fire: bool },
+    /// A small fire at the machine's ignition spot: `Source::Reactor` or `Source::Pump`.
+    MachineFire(Source),
+}
+
+/// What the ship reports to the director.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Situation {
-    /// Fires burning in the rooms the crew is in (the engine room and the corridor).
+    /// Each box is blown (broke, no new fuse yet).
+    pub blown: [bool; JUNCTIONS],
+    /// Fires burning anywhere the crew goes.
     pub fires: u32,
-    /// Broken machines of the `MACHINES` (see its doc).
-    pub broken: u32,
-    /// The engine room's oxygen share, 0..1.
-    pub oxygen: f64,
-    /// The reactor's heat is outside its allowed band (power on): the critical lamps.
-    pub heat_critical: bool,
-    /// Per `CANDIDATES` entry: the fault can happen now (a broken device, or a breach already open,
-    /// is not a candidate: Barotrauma picks among items with Condition > 0, `MalfunctionEvent.cs:44`).
-    pub can_break: [bool; 6],
+    /// The reactor's implosion timer runs (aboard or outside).
+    pub countdown: bool,
 }
 
 impl Situation {
-    /// The room's report, with the fires and the oxygen the host keeps (its air).
-    pub fn of_room(room: &EngineRoom, fires: u32, oxygen: f64) -> Situation {
-        let mut working = vec![room.reactor().condition().functioning(), room.pump().condition().functioning(), room.oxygen_generator().condition().functioning()];
-        working.extend(room.junctions().iter().map(|j| j.condition().functioning()));
-        let w = room.warnings();
-        Situation {
-            fires,
-            broken: working.iter().filter(|ok| !**ok).count() as u32,
-            oxygen,
-            heat_critical: w.critical_heat || w.cold,
-            can_break: [room.pump().condition().functioning(), room.junction(0).condition().functioning(), room.oxygen_generator().condition().functioning(), room.hull().intact(), true, true],
-        }
+    /// An incident is open or the ship is in a worse trouble: nothing new starts.
+    pub fn busy(&self) -> bool {
+        self.fires > 0 || self.countdown || self.blown.iter().any(|b| *b)
     }
 }
 
-/// The director's state as a save holds it: the switch, the timer, the intensity, the rng (the
-/// tuning comes back from the values).
+/// The director's state as a save holds it (the tuning comes back from the values).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DirectorSave {
     pub enabled: bool,
+    /// Calm seconds until the next incident.
     pub timer: f64,
-    pub intensity: f64,
     pub rng: Rng,
 }
 
@@ -107,24 +76,21 @@ pub struct Director {
     cfg: DirectorTuning,
     rng: Rng,
     enabled: bool,
-    /// Seconds until the next fault may fire (it waits at or below 0 while the intensity is high).
+    /// Calm seconds until the next incident.
     timer: f64,
-    intensity: f64,
 }
 
 impl Director {
     pub fn new(cfg: &DirectorTuning, seed: u64) -> Director {
-        let mut d = Director { cfg: cfg.clone(), rng: Rng::new(seed), enabled: cfg.enabled, timer: 0.0, intensity: 0.0 };
-        d.timer = d.next_interval();
-        d
+        Director { cfg: cfg.clone(), rng: Rng::new(seed), enabled: cfg.enabled, timer: cfg.first_s }
     }
 
     pub fn to_save(&self) -> DirectorSave {
-        DirectorSave { enabled: self.enabled, timer: self.timer, intensity: self.intensity, rng: self.rng.clone() }
+        DirectorSave { enabled: self.enabled, timer: self.timer, rng: self.rng.clone() }
     }
 
     pub fn from_save(cfg: &DirectorTuning, s: &DirectorSave) -> Director {
-        Director { cfg: cfg.clone(), rng: s.rng.clone(), enabled: s.enabled, timer: s.timer, intensity: s.intensity }
+        Director { cfg: cfg.clone(), rng: s.rng.clone(), enabled: s.enabled, timer: s.timer }
     }
 
     pub fn enabled(&self) -> bool {
@@ -135,41 +101,41 @@ impl Director {
         self.enabled = on;
     }
 
-    /// 0..1: the room's trouble, following its target at the rise and fall rates.
-    pub fn intensity(&self) -> f64 {
-        self.intensity
+    /// Calm seconds until the next incident.
+    pub fn timer(&self) -> f64 {
+        self.timer
     }
 
-    /// The intensity this report asks for (`EventManager.cs:1139-1143`, our terms).
-    pub fn target(s: &Situation) -> f64 {
-        let broken = f64::from(s.broken) / MACHINES;
-        let bad_air = ((BAD_AIR - s.oxygen) / BAD_AIR).clamp(0.0, 1.0);
-        let heat = if s.heat_critical { 1.0 } else { 0.0 };
-        let fire = if s.fires > 0 { (FIRE_SHARE * f64::from(s.fires)).min(1.0) } else { 0.0 };
-        ((broken + bad_air + heat) / 3.0 + fire * FIRE_WEIGHT).clamp(0.0, 1.0)
-    }
-
-    /// Steps `dt` seconds on the report. Off: nothing moves. Returns the fault that fires now, if any.
-    pub fn step(&mut self, dt: f64, s: &Situation) -> Option<Fault> {
-        if !self.enabled {
+    /// Steps `dt` seconds. Off: nothing moves. The wait runs down only while the ship is calm; the incident that
+    /// starts now, if any.
+    pub fn step(&mut self, dt: f64, s: &Situation) -> Option<Incident> {
+        if !self.enabled || s.busy() {
             return None;
         }
-        let target = Director::target(s);
-        self.intensity = if target > self.intensity {
-            (self.intensity + self.cfg.rise_per_s * dt).min(target)
-        } else {
-            (self.intensity - self.cfg.fall_per_s * dt).max(target)
-        };
         self.timer -= dt;
-        if self.timer > 0.0 || self.intensity > self.cfg.threshold {
+        if self.timer > 0.0 {
             return None;
         }
         self.timer = self.next_interval();
-        let open: Vec<Fault> = CANDIDATES.iter().zip(s.can_break).filter(|(_, ok)| *ok).map(|(f, _)| *f).collect();
-        if open.is_empty() {
-            return None;
+        Some(self.pick(s))
+    }
+
+    /// The dev menu's "force an incident": one now, whatever the pacing and whatever is open, and the wait starts over.
+    pub fn force(&mut self, s: &Situation) -> Incident {
+        self.timer = self.next_interval();
+        self.pick(s)
+    }
+
+    /// A box that is not blown or a machine fire, equal chance; with every box blown, a machine fire.
+    fn pick(&mut self, s: &Situation) -> Incident {
+        let sound: Vec<usize> = (0..JUNCTIONS).filter(|i| !s.blown[*i]).collect();
+        if !sound.is_empty() && self.rng.below(2) == 0 {
+            let index = sound[self.rng.below(sound.len())];
+            let fire = self.rng.unit() < self.cfg.fire_chance;
+            Incident::JunctionFault { index, fire }
+        } else {
+            Incident::MachineFire(if self.rng.below(2) == 0 { Source::Reactor } else { Source::Pump })
         }
-        Some(open[self.rng.below(open.len())])
     }
 
     fn next_interval(&mut self) -> f64 {
@@ -182,65 +148,143 @@ impl Director {
 mod tests {
     use super::*;
 
-    fn cfg(enabled: bool) -> DirectorTuning {
-        DirectorTuning { enabled, min_interval_s: 60.0, max_interval_s: 120.0, threshold: 0.2, rise_per_s: 0.04, fall_per_s: 0.0025 }
+    fn cfg() -> DirectorTuning {
+        DirectorTuning { enabled: true, first_s: 180.0, min_interval_s: 150.0, max_interval_s: 330.0, fire_chance: 0.25 }
     }
 
-    fn calm() -> Situation {
-        Situation { fires: 0, broken: 0, oxygen: 1.0, heat_critical: false, can_break: [true; 6] }
+    /// A little ship for the rules: an incident opens a box or a fire that the "crew" closes after `fix_s`.
+    struct Ship {
+        s: Situation,
+        open_for: f64,
     }
 
-    fn bad() -> Situation {
-        Situation { fires: 5, broken: 4, oxygen: 0.0, heat_critical: true, can_break: [true; 6] }
-    }
+    impl Ship {
+        fn apply(&mut self, i: Incident, fix_s: f64) {
+            match i {
+                Incident::JunctionFault { index, .. } => self.s.blown[index] = true,
+                Incident::MachineFire(_) => self.s.fires += 1,
+            }
+            self.open_for = fix_s;
+        }
 
-    /// Steps `secs` in 0.1 s steps; the faults with the time they fired at.
-    fn run(d: &mut Director, s: &Situation, secs: f64) -> Vec<(f64, Fault)> {
-        let mut out = Vec::new();
-        let mut t = 0.0;
-        while t < secs {
-            t += 0.1;
-            if let Some(f) = d.step(0.1, s) {
-                out.push((t, f));
+        fn tick(&mut self, dt: f64) {
+            if self.open_for > 0.0 {
+                self.open_for -= dt;
+                if self.open_for <= 0.0 {
+                    self.s = Situation::default();
+                }
             }
         }
-        out
+    }
+
+    /// Runs `secs` in 0.5 s steps; each incident stays open `fix_s`. Returns the incidents with their times and the largest
+    /// number open at once.
+    fn run(d: &mut Director, secs: f64, fix_s: f64) -> (Vec<(f64, Incident)>, usize) {
+        let mut ship = Ship { s: Situation::default(), open_for: 0.0 };
+        let (mut out, mut most, mut t) = (Vec::new(), 0, 0.0);
+        while t < secs {
+            t += 0.5;
+            ship.tick(0.5);
+            if let Some(i) = d.step(0.5, &ship.s) {
+                let open = ship.s.fires as usize + ship.s.blown.iter().filter(|b| **b).count();
+                most = most.max(open + 1);
+                out.push((t, i));
+                ship.apply(i, fix_s);
+            }
+        }
+        (out, most)
     }
 
     #[test]
     fn off_does_nothing() {
-        let mut d = Director::new(&cfg(false), 1);
-        assert!(run(&mut d, &calm(), 1000.0).is_empty());
-        assert_eq!(d.intensity(), 0.0);
+        let mut d = Director::new(&DirectorTuning { enabled: false, ..cfg() }, 1);
+        assert!(run(&mut d, 5000.0, 10.0).0.is_empty());
     }
 
     #[test]
-    fn on_fires_within_the_max_interval() {
-        let mut d = Director::new(&cfg(true), 1);
-        let got = run(&mut d, &calm(), 121.0);
-        assert!(!got.is_empty() && got[0].0 <= 120.2, "{got:?}");
+    fn no_incident_before_the_first_time_and_one_right_after() {
+        let mut d = Director::new(&cfg(), 1);
+        let (got, _) = run(&mut d, 179.0, 10.0);
+        assert!(got.is_empty(), "{got:?}");
+        let (got, _) = run(&mut d, 2.0, 10.0);
+        assert_eq!(got.len(), 1, "{got:?}");
     }
 
     #[test]
-    fn high_intensity_waits() {
-        let mut d = Director::new(&cfg(true), 1);
-        assert!(run(&mut d, &bad(), 600.0).is_empty());
-        assert!(d.intensity() > 0.2);
+    fn never_two_open_at_once_and_the_wait_is_inside_the_interval() {
+        let mut d = Director::new(&cfg(), 5);
+        let (got, most) = run(&mut d, 6000.0, 60.0);
+        assert!(got.len() >= 10, "{got:?}");
+        assert_eq!(most, 1, "one incident open at a time");
+        for w in got.windows(2) {
+            let gap = w[1].0 - w[0].0;
+            // The incident stays open 60 s; the wait counts only after it is closed.
+            assert!(gap >= 150.0 + 60.0 - 1.0 && gap <= 330.0 + 60.0 + 1.0, "{gap}");
+        }
     }
 
     #[test]
-    fn only_open_candidates_fire() {
-        let only_hull = Situation { can_break: [false, false, false, true, false, false], ..calm() };
-        let got = run(&mut Director::new(&cfg(true), 3), &only_hull, 1000.0);
-        assert!(!got.is_empty() && got.iter().all(|(_, f)| *f == Fault::HullBreach), "{got:?}");
+    fn an_open_incident_holds_the_next_one_however_long() {
+        let mut d = Director::new(&cfg(), 2);
+        let open = Situation { blown: [false, true, false], ..Default::default() };
+        for _ in 0..10_000 {
+            assert!(d.step(1.0, &open).is_none());
+        }
+        let fire = Situation { fires: 1, ..Default::default() };
+        assert!(d.step(1000.0, &fire).is_none());
     }
 
     #[test]
-    fn the_same_seed_gives_the_same_faults() {
-        let a = run(&mut Director::new(&cfg(true), 7), &calm(), 3000.0);
-        let b = run(&mut Director::new(&cfg(true), 7), &calm(), 3000.0);
-        let c = run(&mut Director::new(&cfg(true), 8), &calm(), 3000.0);
+    fn no_incident_while_the_countdown_runs() {
+        let mut d = Director::new(&cfg(), 3);
+        let counting = Situation { countdown: true, ..Default::default() };
+        for _ in 0..2000 {
+            assert!(d.step(1.0, &counting).is_none());
+        }
+        // The wait did not run down meanwhile: the full first wait is still ahead.
+        assert!(d.step(100.0, &Situation::default()).is_none());
+        assert!(d.step(100.0, &Situation::default()).is_some());
+    }
+
+    #[test]
+    fn the_same_seed_gives_the_same_sequence() {
+        let a = run(&mut Director::new(&cfg(), 7), 8000.0, 30.0).0;
+        let b = run(&mut Director::new(&cfg(), 7), 8000.0, 30.0).0;
+        let c = run(&mut Director::new(&cfg(), 8), 8000.0, 30.0).0;
         assert_eq!(a, b);
-        assert!(a.len() >= 10 && a != c, "{a:?}");
+        assert!(a.len() >= 15 && a != c, "{a:?}");
+        assert!(a.iter().any(|(_, i)| matches!(i, Incident::JunctionFault { .. })) && a.iter().any(|(_, i)| matches!(i, Incident::MachineFire(_))));
+    }
+
+    #[test]
+    fn a_fault_picks_only_a_box_that_is_not_blown_and_all_blown_means_fire() {
+        let mut d = Director::new(&cfg(), 9);
+        let some = Situation { blown: [true, false, true], ..Default::default() };
+        for _ in 0..200 {
+            if let Incident::JunctionFault { index, .. } = d.force(&some) {
+                assert_eq!(index, 1);
+            }
+        }
+        let all = Situation { blown: [true; JUNCTIONS], ..Default::default() };
+        for _ in 0..50 {
+            assert!(matches!(d.force(&all), Incident::MachineFire(_)));
+        }
+    }
+
+    #[test]
+    fn the_fire_chance_is_the_configured_one() {
+        let mut d = Director::new(&DirectorTuning { fire_chance: 0.0, ..cfg() }, 4);
+        assert!((0..300).all(|_| !matches!(d.force(&Situation::default()), Incident::JunctionFault { fire: true, .. })));
+        let mut d = Director::new(&DirectorTuning { fire_chance: 1.0, ..cfg() }, 4);
+        let faults: Vec<_> = (0..300).filter_map(|_| match d.force(&Situation::default()) { Incident::JunctionFault { fire, .. } => Some(fire), _ => None }).collect();
+        assert!(!faults.is_empty() && faults.iter().all(|f| *f));
+    }
+
+    #[test]
+    fn a_save_goes_on_where_it_left_off() {
+        let mut a = Director::new(&cfg(), 6);
+        let _ = run(&mut a, 400.0, 20.0);
+        let mut b = Director::from_save(&cfg(), &a.to_save());
+        assert_eq!(run(&mut a, 3000.0, 20.0).0, run(&mut b, 3000.0, 20.0).0);
     }
 }

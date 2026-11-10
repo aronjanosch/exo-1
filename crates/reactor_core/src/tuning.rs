@@ -119,7 +119,7 @@ impl Tuning {
         need(self.graph_points >= 1 && self.graph_interval_s > 0.0, "graph_points", "must be >= 1, graph_interval_s > 0");
         let d = &self.director;
         need(d.min_interval_s > 0.0 && d.max_interval_s >= d.min_interval_s, "director.*_interval_s", "min > 0, max >= min");
-        need((0.0..=1.0).contains(&d.threshold) && d.rise_per_s > 0.0 && d.fall_per_s > 0.0, "director", "threshold 0..=1, rise_per_s and fall_per_s > 0");
+        need(d.first_s >= 0.0 && (0.0..=1.0).contains(&d.fire_chance), "director", "first_s >= 0, fire_chance 0..=1");
         let sh = &self.shield;
         need(sh.max > 0.0 && sh.charge_rate_max >= 0.0 && sh.recovery_delay_s >= 0.0 && sh.quantum_offline_s >= 0.0, "shield", "max > 0, charge_rate_max, recovery_delay_s, quantum_offline_s >= 0");
         need((0.0..=1.0).contains(&sh.deflection) && (0.0..=1.0).contains(&sh.quantum_min) && (0.0..=1.0).contains(&sh.upkeep), "shield", "deflection, quantum_min and upkeep 0..=1");

@@ -104,9 +104,48 @@ impl Vein {
     }
 }
 
+/// Where a ray first meets an axis-aligned box: the distance along `dir` (a unit vector), 0 when the
+/// origin is inside, None when it misses or the box lies behind. The slab test, in whatever frame
+/// the three arrays share.
+pub fn ray_box(origin: [f64; 3], dir: [f64; 3], centre: [f64; 3], half: [f64; 3]) -> Option<f64> {
+    if origin.iter().chain(&dir).chain(&centre).chain(&half).any(|x| !x.is_finite()) {
+        return None;
+    }
+    let (mut near, mut far) = (0.0_f64, f64::INFINITY);
+    for i in 0..3 {
+        let (o, d, lo, hi) = (origin[i], dir[i], centre[i] - half[i], centre[i] + half[i]);
+        if d.abs() < 1e-12 {
+            if o < lo || o > hi {
+                return None;
+            }
+        } else {
+            let (a, b) = ((lo - o) / d, (hi - o) / d);
+            near = near.max(a.min(b));
+            far = far.min(a.max(b));
+            if near > far {
+                return None;
+            }
+        }
+    }
+    near.is_finite().then_some(near)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_ray_hits_a_box_in_front_and_misses_beside_and_behind_it() {
+        let (c, h) = ([5.0, 0.0, 0.5], [0.5, 0.5, 0.5]);
+        assert_eq!(ray_box([0.0, 0.0, 0.5], [1.0, 0.0, 0.0], c, h), Some(4.5));
+        assert_eq!(ray_box([0.0, 2.0, 0.5], [1.0, 0.0, 0.0], c, h), None, "beside");
+        assert_eq!(ray_box([0.0, 0.0, 0.5], [-1.0, 0.0, 0.0], c, h), None, "behind");
+        assert_eq!(ray_box([5.0, 0.0, 0.5], [0.0, 1.0, 0.0], c, h), Some(0.0), "inside");
+        let d = [1.0 / 2f64.sqrt(), 1.0 / 2f64.sqrt(), 0.0];
+        let t = ray_box([0.0, 0.0, 0.5], d, [5.0, 5.0, 0.5], h).expect("the slanted ray reaches the box");
+        assert!((t - 4.5 * 2f64.sqrt()).abs() < 1e-9, "{t}");
+        assert_eq!(ray_box([f64::NAN, 0.0, 0.0], [1.0, 0.0, 0.0], c, h), None);
+    }
 
     fn cfg() -> DigConfig {
         DigConfig { cut_s: 2.0, cool_per_s: 0.5, chunks: 4, regrow_s: 10.0, reach_m: 2.5, veins: vec![VeinSpec { ore: "grumblite".into(), at: [0.0, 0.0] }] }

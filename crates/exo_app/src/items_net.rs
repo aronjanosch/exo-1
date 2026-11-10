@@ -102,6 +102,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
             for slot in net.take_left_peers() {
                 items.note_using(slot, None);
                 items.release_locks(now, slot);
+                items.dig.asks.push((slot, item_core::wire::CutAsk::Stop));
                 if let Some(r) = repairs.as_mut() {
                     r.forget(slot);
                 }
@@ -122,6 +123,9 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                 if let Some(f) = items.fire.clone() {
                     items.net_out.push(NetOut::Fire { to: Some(slot), f });
                 }
+                if let Some(d) = items.dig.news.clone() {
+                    items.net_out.push(NetOut::Dig { to: Some(slot), d });
+                }
                 let s = items.public.clone();
                 items.net_out.push(NetOut::Status { to: Some(slot), s });
             }
@@ -138,6 +142,10 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     }
                     Some(ToHost::Spray(a)) => {
                         items.spray_asks.push((slot, a));
+                        true
+                    }
+                    Some(ToHost::Cut(a)) => {
+                        items.dig.asks.push((slot, a));
                         true
                     }
                     Some(ToHost::Repair(a)) => {
@@ -183,6 +191,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     Some(ToClient::Room(r)) => items.room = r,
                     Some(ToClient::Reactor(r)) => items.reactor = Some(r),
                     Some(ToClient::Fire(f)) => items.fire = Some(f),
+                    Some(ToClient::Dig(d)) => items.dig.news = Some(d),
                     Some(ToClient::RepairDone) | Some(ToClient::RepairRefused) => items.repair_done = true,
                     Some(ToClient::Status(s)) => items.public = s,
                     Some(ToClient::GameOver) => items.game_over_seen = true,
@@ -315,6 +324,12 @@ pub fn items_net_out(
             }
             NetOut::SprayAsk(a) => {
                 net.send_reliable(None, &wire::encode(&ToHost::Spray(a)));
+            }
+            NetOut::CutAsk(a) => {
+                net.send_reliable(None, &wire::encode(&ToHost::Cut(a)));
+            }
+            NetOut::Dig { to, d } => {
+                net.send_reliable(to, &wire::encode(&ToClient::Dig(d)));
             }
             NetOut::RepairAsk(a) => {
                 net.send_reliable(None, &wire::encode(&ToHost::Repair(a)));

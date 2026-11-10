@@ -26,6 +26,8 @@ pub enum ToHost {
     /// The station whose screen the sender's active display shows (r43, the bots' occupancy), or `None`
     /// when it shows no station's. Sent when the display changes.
     Using(Option<BotStation>),
+    /// The welder's cut, aimed while LMB is held (#324): the host decides.
+    Cut(CutAsk),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -46,6 +48,8 @@ pub enum ToClient {
     Status(Vec<(PlayerId, PublicStatus)>),
     /// The whole crew is dead: the host shows GAME OVER and reloads the last save (#254).
     GameOver,
+    /// The dig site's veins and the cuts on them (#324), about 4 times a second while they change.
+    Dig(DigNews),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -393,6 +397,29 @@ pub enum SprayAsk {
     /// direction a unit vector). Sent when the aim moves, about 10 times a second at most.
     Aim { eye: [f64; 3], dir: [f64; 3] },
     Stop,
+}
+
+/// The welder's cut (#324), as the spray's ask: the eye and the look direction (world metres, unit
+/// direction), sent when the aim moves, about 10 times a second at most; `Stop` when LMB is let go.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CutAsk {
+    Aim { eye: [f64; 3], dir: [f64; 3] },
+    Stop,
+}
+
+/// A vein as the host has it: the chunks it holds and its heat in thousandths (0..=1000).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VeinNew {
+    pub chunks: u8,
+    pub heat: u16,
+}
+
+/// The dig site: each vein in the config's order, and the point (world metres) of every cut that
+/// hits a vein now.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DigNews {
+    pub veins: Vec<VeinNew>,
+    pub cuts: Vec<[f64; 3]>,
 }
 
 /// A fire as the host has it: its id, its centre on the engine room's floor (area metres)
@@ -1008,6 +1035,24 @@ mod tests {
         assert_eq!(back, news);
         let empty = FireNews::default();
         assert_eq!(decode::<ToClient>(&encode(&ToClient::Fire(empty.clone()))).is_some_and(|m| matches!(m, ToClient::Fire(f) if f == empty)), true);
+    }
+
+    #[test]
+    fn cuts_and_the_dig_news_travel_as_they_are() {
+        for ask in [CutAsk::Aim { eye: [0.5, 1.6, -2.0], dir: [0.6, -0.8, 0.0] }, CutAsk::Stop] {
+            let back = match decode::<ToHost>(&encode(&ToHost::Cut(ask))).expect("decodes") {
+                ToHost::Cut(a) => a,
+                _ => panic!("the cut request"),
+            };
+            assert_eq!(back, ask);
+        }
+        for news in [DigNews::default(), DigNews { veins: vec![VeinNew { chunks: 8, heat: 0 }, VeinNew { chunks: 3, heat: 730 }, VeinNew { chunks: 0, heat: 0 }], cuts: vec![[1.0, 2.0, -3.5]] }] {
+            let back = match decode::<ToClient>(&encode(&ToClient::Dig(news.clone()))).expect("decodes") {
+                ToClient::Dig(d) => d,
+                _ => panic!("the dig message"),
+            };
+            assert_eq!(back, news);
+        }
     }
 
     #[test]

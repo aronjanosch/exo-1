@@ -12,7 +12,7 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use grab_core::CrateSize;
 use item_core::container::Stack;
-use item_core::wire::{BotStation, FireNews, PublicStatus, ReactorAsk, ReactorNews, RepairAsk, RoomAsk, RoomNews, SprayAsk, Vitals};
+use item_core::wire::{BotStation, FireNews, PublicStatus, ReactorAsk, ReactorNews, RepairAsk, RoomAsk, RoomNews, SprayAsk, Vitals, CutAsk, DigNews};
 use item_core::{Action, Client, Event, FrameRef, Host, ItemDefs, LooseId, Placement, PlayerId, Reject, Request};
 use walker_core::Frame;
 
@@ -70,6 +70,10 @@ pub enum NetOut {
     ReactorAsk(ReactorAsk),
     Fire { to: Option<PlayerId>, f: FireNews },
     SprayAsk(SprayAsk),
+    /// Client to host: the welder's cut (#324).
+    CutAsk(CutAsk),
+    /// Host to the clients: the dig site's veins (#324).
+    Dig { to: Option<PlayerId>, d: DigNews },
     RepairAsk(RepairAsk),
     /// Host to one client: its repair session ended, the machine is full.
     RepairDone { to: PlayerId },
@@ -135,6 +139,15 @@ pub struct Items {
     pub using: BTreeMap<PlayerId, BotStation>,
     /// Host: the masks put on or taken off (the player, the slot the mask is in), from the uses.
     pub mask_uses: Vec<(PlayerId, usize)>,
+    pub dig: DigLink,
+}
+
+/// The dig run's news and asks (#324): the host's cuts come in as `asks`, the veins go out as `news`.
+#[derive(Default)]
+pub struct DigLink {
+    /// The veins as the host has them; a client takes it from the wire. None until the first one.
+    pub news: Option<DigNews>,
+    pub asks: Vec<(PlayerId, CutAsk)>,
 }
 
 /// Whether the host can simulate an action's placement: a cabin is the host's ship. (Other
@@ -149,7 +162,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, canister_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new(), refilling: BTreeSet::new(), using: BTreeMap::new(), mask_uses: Vec::new(), game_over_seen: false }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, canister_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new(), refilling: BTreeSet::new(), using: BTreeMap::new(), mask_uses: Vec::new(), game_over_seen: false, dig: DigLink::default() }
     }
 
     pub fn me(&self) -> PlayerId {
@@ -204,6 +217,14 @@ impl Items {
             self.net_out.push(NetOut::SprayAsk(a));
         } else {
             self.spray_asks.push((self.me(), a));
+        }
+    }
+
+    pub fn ask_cut(&mut self, a: CutAsk) {
+        if self.role == Role::Client {
+            self.net_out.push(NetOut::CutAsk(a));
+        } else {
+            self.dig.asks.push((self.me(), a));
         }
     }
 

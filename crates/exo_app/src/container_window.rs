@@ -288,6 +288,9 @@ fn rule_text(c: &Container) -> String {
     let mut tags: Vec<String> = Vec::new();
     for i in 0..c.len() {
         let r = c.rule(i);
+        if r.take_only {
+            continue;
+        }
         if r.allow.is_empty() {
             return "ANY ITEM".into();
         }
@@ -310,6 +313,11 @@ fn reason_text(why: &Reject, c: Option<&Container>, place: Option<usize>, at: Pl
         (Reject::Invalid, Place::Air) => return "NO SUIT".into(),
         (_, Place::Air | Place::BoxAir(_)) => return "AIR CANISTERS ONLY".into(),
         _ => {}
+    }
+    if let (Some(c), Some(i)) = (c, place) {
+        if i < c.len() && c.rule(i).take_only {
+            return "TAKE ONLY".into();
+        }
     }
     match why {
         Reject::Full => "NO FREE PLACE".into(),

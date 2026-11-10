@@ -28,6 +28,8 @@ pub enum ToHost {
     Using(Option<BotStation>),
     /// The welder's cut, aimed while LMB is held (#324): the host decides.
     Cut(CutAsk),
+    /// The fabricator's button (#326): the host decides whether it starts.
+    Fab(FabAsk),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -50,6 +52,8 @@ pub enum ToClient {
     GameOver,
     /// The dig site's veins and the cuts on them (#324), about 4 times a second while they change.
     Dig(DigNews),
+    /// The fabricator's screen and glow (#326), when its state changes.
+    Fab(FabNews),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -420,6 +424,43 @@ pub struct VeinNew {
 pub struct DigNews {
     pub veins: Vec<VeinNew>,
     pub cuts: Vec<[f64; 3]>,
+}
+
+/// The fabricator's physical button (#326).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FabAsk {
+    Push,
+}
+
+/// What the fabricator's screen says (#326); `recipe` and `left_ds` fill in the words.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FabMode {
+    /// Idle, the input places empty.
+    #[default]
+    LoadOre,
+    /// Idle, the load makes `recipe`.
+    Ready,
+    /// Idle, the load makes nothing.
+    NoRecipe,
+    Running,
+    /// No power (a run paused, or idle and dark).
+    NoPower,
+    /// The output place holds a product (`recipe` makes it).
+    Take,
+}
+
+/// The fabricator as the host has it. The counters only go up (wrapping): a client plays a click,
+/// a clunk or a refusal when one rises.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FabNews {
+    pub mode: FabMode,
+    /// Index into the fabricator config's recipes; 255 when no recipe belongs to the face.
+    pub recipe: u8,
+    /// Seconds left of a run, in tenths.
+    pub left_ds: u16,
+    pub pushes: u32,
+    pub refusals: u32,
+    pub runs: u32,
 }
 
 /// A fire as the host has it: its id, its centre on the engine room's floor (area metres)
@@ -1050,6 +1091,23 @@ mod tests {
             let back = match decode::<ToClient>(&encode(&ToClient::Dig(news.clone()))).expect("decodes") {
                 ToClient::Dig(d) => d,
                 _ => panic!("the dig message"),
+            };
+            assert_eq!(back, news);
+        }
+    }
+
+    #[test]
+    fn the_fabricator_travels_as_it_is() {
+        let ask = match decode::<ToHost>(&encode(&ToHost::Fab(FabAsk::Push))).expect("decodes") {
+            ToHost::Fab(a) => a,
+            _ => panic!("the fabricator ask"),
+        };
+        assert_eq!(ask, FabAsk::Push);
+        for mode in [FabMode::LoadOre, FabMode::Ready, FabMode::NoRecipe, FabMode::Running, FabMode::NoPower, FabMode::Take] {
+            let news = FabNews { mode, recipe: 2, left_ds: 123, pushes: 4, refusals: 1, runs: u32::MAX };
+            let back = match decode::<ToClient>(&encode(&ToClient::Fab(news))).expect("decodes") {
+                ToClient::Fab(n) => n,
+                _ => panic!("the fabricator news"),
             };
             assert_eq!(back, news);
         }

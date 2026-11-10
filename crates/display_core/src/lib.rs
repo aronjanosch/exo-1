@@ -5,6 +5,7 @@ use std::borrow::Cow;
 pub mod airlock_panel;
 pub mod canvas;
 pub mod captain;
+pub mod fabricator;
 pub mod hud;
 pub mod monitor;
 pub mod reactor_main;

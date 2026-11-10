@@ -710,6 +710,32 @@ fn the_outside_timer_stays_in_range_and_survives_a_save() {
 }
 
 #[test]
+fn make_critical_puts_a_running_core_at_critical_heat_with_the_timer_set_and_it_stays_there() {
+    let mut r = reactor(50.0);
+    run(&mut r, 20.0, 500.0);
+    assert!(r.make_critical(0.75));
+    r.step(DT, 500.0);
+    assert!(r.heat() > r.bands().heat_allowed.hi, "critical heat");
+    assert!((r.timers().1 - 0.75).abs() < 0.01, "timer near 75 %: {}", r.timers().1);
+    assert!(r.alarm(AlarmKind::HeatCritical));
+    let ev = run(&mut r, 10.0, 500.0);
+    assert!(r.timers().1 > 0.75, "the timer runs on: {}", r.timers().1);
+    assert!(!ev.iter().any(|(_, e)| *e == ReactorEvent::Implosion), "not yet");
+    let ev = run(&mut r, 60.0, 500.0);
+    assert!(first(&ev, |e| *e == ReactorEvent::Implosion).is_some(), "and it implodes aboard if nobody acts");
+}
+
+#[test]
+fn make_critical_does_nothing_to_a_core_that_is_off_or_out() {
+    let mut r = reactor(50.0);
+    r.set_power(false);
+    assert!(!r.make_critical(0.75));
+    let mut r = reactor(50.0);
+    r.eject();
+    assert!(!r.make_critical(0.75));
+}
+
+#[test]
 fn the_timer_aboard_still_runs_to_an_implosion_and_cooling_still_runs_it_back() {
     let r = critical_reactor();
     assert!(r.imploded(), "left critical, it implodes aboard (the game-over event)");

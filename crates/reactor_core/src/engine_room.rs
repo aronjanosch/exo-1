@@ -1428,6 +1428,11 @@ impl EngineRoom {
         out
     }
 
+    /// The dev menu's "make it critical" (#325): `Reactor::make_critical`. The glue sets its manual input to match.
+    pub fn make_critical(&mut self, timer: f64) -> bool {
+        self.reactor.make_critical(timer)
+    }
+
     /// The dev menu's cold start: the reactor off and dark, the stand off, the trap empty. The breakers stay as they are.
     pub fn cold_reactor(&mut self) {
         self.start.go_cold();

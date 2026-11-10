@@ -1151,6 +1151,22 @@ impl Reactor {
         }
     }
 
+    /// The dev command "make it critical" (#325): a running core is put to critical heat with its implosion timer at
+    /// `timer` (0..1 of its delay), Manual at injection 100 and converter 30, which keeps it there until the crew cools
+    /// it or throws it out. False (nothing changes) when the core is off, broken, ejected or imploded.
+    pub fn make_critical(&mut self, timer: f64) -> bool {
+        if !self.power_on || self.ejected || self.imploded || !self.condition.functioning() {
+            return false;
+        }
+        let hi = self.bands().heat_allowed.hi;
+        self.set_targets(100.0, 30.0);
+        self.injection = self.target_injection.min(self.fill);
+        self.heat = self.heat.max(hi + 2.0).min(100.0);
+        self.heat_vel = 0.0;
+        self.overheat_timer = timer.clamp(0.0, 0.99) * self.tuning.implosion_delay_s;
+        true
+    }
+
     /// The ejected core's implosion timer, 0..1 of its delay; None when no core out there is counting.
     pub fn outside_timer(&self) -> Option<f64> {
         self.outside_timer.map(|t| (t / self.tuning.implosion_delay_s.max(1e-9)).clamp(0.0, 1.0))

@@ -35,6 +35,8 @@
   "dev_minus": ["Minus"],
   "dev_equals": ["Equal"],
   "dev_bracket": ["BracketLeft"],
+  "dev_bracket_right": ["BracketRight"],
+  "dev_backslash": ["Backslash"],
   "debug_hud": ["F3"],
   "landing_mode": ["KeyK"],
   "turn_cap": ["F8"],

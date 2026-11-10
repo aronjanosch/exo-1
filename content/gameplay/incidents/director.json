@@ -1,12 +1,11 @@
 {
-  "_comment": "The incident director: random faults on their own. Every number is a starting value, TODO(initiator).",
+  "_comment": "The incident director (#328): things on the ship break by themselves. Every number is a starting value, TODO(initiator).",
   "director": {
-    "_comment": "Director (r38, Barotrauma EventManager and MalfunctionEvent, simplified; sources in reactor_core director.rs): enabled (off here; the dev DIRECTOR toggle), min_interval_s and max_interval_s (the random wait between faults: Barotrauma EventCooldown 60 s, the max 3 cooldowns, TODO(initiator)), threshold (intensity at or below which a fault may fire; Barotrauma DefaultEventThreshold 0.2), rise_per_s and fall_per_s (intensity climb and fall; Barotrauma 0.04 and 0.0025), all TODO(initiator).",
-    "enabled": false,
-    "min_interval_s": 60.0,
-    "max_interval_s": 180.0,
-    "threshold": 0.2,
-    "rise_per_s": 0.04,
-    "fall_per_s": 0.0025
+    "_comment": "Director (reactor_core director.rs): enabled (the dev menu's Director toggle sets it in play), first_s (calm seconds before the first incident), min_interval_s and max_interval_s (the random calm wait between incidents; it runs down only while no box is blown, no fire burns and no implosion countdown runs), fire_chance (a faulting junction box starts a small fire with this chance, 0..1). All TODO(initiator).",
+    "enabled": true,
+    "first_s": 180.0,
+    "min_interval_s": 150.0,
+    "max_interval_s": 330.0,
+    "fire_chance": 0.25
   }
 }

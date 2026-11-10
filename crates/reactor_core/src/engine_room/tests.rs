@@ -1005,3 +1005,71 @@ fn wear_off_keeps_the_machines_full() {
     assert_eq!(r.oxygen_generator().condition().value(), 100.0, "the generator did not wear");
 }
 
+
+/// #328: a box that broke needs a new fuse before anyone repairs it.
+#[test]
+fn a_blown_box_refuses_repair_until_a_fuse_is_fitted() {
+    let mut r = safe_room();
+    assert!(r.junction(1).repair_allowed().is_ok(), "a sound box is no blown one");
+    let ev = r.blow_junction(1, false);
+    assert!(ev.contains(&RoomEvent::Sparks(1)));
+    assert!(r.junction(1).blown() && !r.junction(1).condition().functioning());
+    assert_eq!(r.junction(1).repair_allowed(), Err(RepairRefusal::NeedsFuse));
+    assert!(r.junction_mut(1).fit_fuse(), "the fuse goes in");
+    assert!(r.junction(1).repair_allowed().is_ok());
+    assert!(!r.junction(1).blown() && !r.junction(1).condition().functioning(), "still broken until repaired");
+    // A step after the fuse does not blow it again: the box did not newly break.
+    let _ = r.step(DT, Input::auto());
+    assert!(!r.junction(1).blown());
+}
+
+#[test]
+fn a_fuse_on_a_box_that_is_not_blown_is_refused_and_nothing_changes() {
+    let mut r = safe_room();
+    let before = r.junction(0).to_save();
+    assert!(!r.junction_mut(0).fit_fuse());
+    assert_eq!(r.junction(0).to_save(), before);
+    // A worn box (below the repair line, not broken) is not blown either.
+    r.junction_mut(0).condition_mut().set_value(60.0);
+    let _ = r.step(DT, Input::auto());
+    assert!(!r.junction(0).blown() && !r.junction_mut(0).fit_fuse());
+}
+
+#[test]
+fn any_break_of_the_condition_blows_the_box_and_a_second_blow_is_ignored() {
+    let mut r = safe_room();
+    r.junction_mut(2).condition_mut().set_value(0.0);
+    let _ = r.step(DT, Input::auto());
+    assert!(r.junction(2).blown());
+    assert!(r.blow_junction(2, true).is_empty(), "already broken: no new sparks or fire");
+    // After the fuse and a repair back to working, a new break blows it again.
+    assert!(r.junction_mut(2).fit_fuse());
+    r.junction_mut(2).condition_mut().set_value(100.0);
+    let _ = r.step(DT, Input::auto());
+    assert!(!r.junction(2).blown());
+    r.junction_mut(2).condition_mut().set_value(0.0);
+    let _ = r.step(DT, Input::auto());
+    assert!(r.junction(2).blown());
+}
+
+#[test]
+fn the_save_keeps_blown() {
+    let mut r = safe_room();
+    let _ = r.blow_junction(1, false);
+    let save = r.to_save();
+    assert!(save.junctions[1].blown && !save.junctions[0].blown);
+    let back = EngineRoom::from_save(&Tuning::shipped(), &through_json(&save));
+    assert!(back.junction(1).blown() && !back.junction(0).blown());
+}
+
+#[test]
+fn a_box_passes_power_only_working_and_with_a_group_switched_on() {
+    let mut r = safe_room();
+    assert!((0..JUNCTIONS).all(|i| r.junction_passes(i)));
+    let _ = r.blow_junction(1, false);
+    assert!(!r.junction_passes(1) && r.junction_passes(0) && r.junction_passes(2));
+    for g in Group::ALL.into_iter().filter(|g| g.junction() == 2) {
+        r.set_breaker(g, false);
+    }
+    assert!(!r.junction_passes(2), "both toggles off");
+}

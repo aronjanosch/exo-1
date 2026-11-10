@@ -141,6 +141,11 @@ fn tool_speed(t: RepairTool) -> Tool {
     }
 }
 
+/// The box is blown (#328): a repair is refused until a fuse is fitted.
+fn blown(r: Option<&ReactorNews>, d: RepairDevice) -> bool {
+    matches!(d, RepairDevice::JunctionBox(i) if r.is_some_and(|r| r.junction_blown[i]))
+}
+
 fn part_of(r: &ReactorNews, d: RepairDevice) -> PartNews {
     match d {
         RepairDevice::Reactor => r.reactor,
@@ -277,7 +282,8 @@ fn repair_client(time: Res<Time>, mut controls: ResMut<Controls>, mut actions: R
     match play.0.take() {
         None => {
             let Some(d) = device else { return };
-            let usable = tool == Some(tool_for(d)) && part(d).is_some_and(|p| p.share < 1.0);
+            // A blown box waits for its fuse (#328): the repair does not start.
+            let usable = tool == Some(tool_for(d)) && part(d).is_some_and(|p| p.share < 1.0) && !blown(items.reactor.as_ref(), d);
             if !controls.click || !on_foot || !usable {
                 return;
             }
@@ -296,7 +302,7 @@ fn repair_client(time: Res<Time>, mut controls: ResMut<Controls>, mut actions: R
             if host_done {
                 return;
             }
-            let ended = key || done || !on_foot || slot != p.slot || device != Some(p.device) || pl.w.pos.distance(p.start) > t.walk_away_m;
+            let ended = key || done || blown(items.reactor.as_ref(), p.device) || !on_foot || slot != p.slot || device != Some(p.device) || pl.w.pos.distance(p.start) > t.walk_away_m;
             if ended {
                 items.ask_repair(RepairAsk::Stop);
                 return;
@@ -390,7 +396,8 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
             RepairAsk::Start { device, tool } => {
                 // The tool must be the machine's, the machine must need it, and no one else may work on it.
                 let busy = sessions.sessions.iter().any(|h| h.device == device && h.player != player);
-                if tool != tool_for(device) || busy || fraction_of(&sim.room, device) >= 1.0 {
+                let needs_fuse = matches!(device, RepairDevice::JunctionBox(i) if sim.room.junction(i).repair_allowed().is_err());
+                if tool != tool_for(device) || busy || needs_fuse || fraction_of(&sim.room, device) >= 1.0 {
                     refuse(&mut items, player);
                     continue;
                 }
@@ -466,7 +473,10 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
             }
         } else {
             // A broken machine waits for its hits; otherwise the rise runs at the session's tool's repair time.
-            if may_rise(h.gated, h.hits, fraction_of(&sim.room, h.device), &t)
+            // A box that broke during the session is blown again: no rise until the fuse is in (#328).
+            let blown = matches!(h.device, RepairDevice::JunctionBox(i) if sim.room.junction(i).blown());
+            if !blown
+                && may_rise(h.gated, h.hits, fraction_of(&sim.room, h.device), &t)
                 && let Some(c) = condition_mut(&mut sim.room, h.device)
             {
                 // The repairer's mechanical skill sets the rise (#254); the start level before any record.

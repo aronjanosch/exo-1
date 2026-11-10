@@ -150,11 +150,15 @@ pub fn plugin(app: &mut App) {
 }
 
 /// Whether the ship gives the canister boxes power: the master is live, the notion the airlock's
-/// panel uses (`ReactorNews::startup`). TODO(initiator): a small consumer of its own on the grid;
-/// `reactor_core` has no per-consumer power yet, so a box draws nothing from it.
+/// panel uses (`ReactorNews::startup`), and JB-2 (the corridor's box, where the equipment room hangs, #328) passes power.
+/// TODO(initiator): a small consumer of its own on the grid; `reactor_core` has no per-consumer power yet, so a box draws nothing
+/// from it. The fabricator (#326) hangs on JB-2 through this too.
 pub fn box_power(sim: &ReactorSim) -> bool {
-    sim.room.master_on()
+    sim.room.master_on() && sim.room.junction_passes(EQUIPMENT_BOX)
 }
+
+/// The junction box the equipment room hangs on (JB-2, index 1).
+pub const EQUIPMENT_BOX: usize = 1;
 
 /// How much a canister in a box fills in `dt` seconds (percent): the shelf's rate with power, nothing without.
 pub fn fill_percent(powered: bool, dt: f64) -> f64 {

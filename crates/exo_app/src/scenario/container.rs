@@ -143,24 +143,24 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
         let slot = bar_slot_of(w, "extinguisher").expect("the extinguisher");
         let from = centre(w, Place::Bar(slot));
         pointer_at(w, Some(from), true);
-        begin(w, c, "container: drag the extinguisher to place 6");
+        begin(w, c, "container: drag the extinguisher to the last place");
         true
     }));
     s.push(wait(0.1));
     s.push(Box::new(|w, c| {
-        let to = centre(w, Place::Box(5));
+        let to = centre(w, Place::Box(11));
         pointer_at(w, Some(to), true);
         if c.t < 0.1 {
             return false;
         }
-        check(c, cw(w).dragging() && cw(w).over.as_ref().is_some_and(|(p, why)| *p == Place::Box(5) && why.is_none()), format!("container: the place accepts ({:?})", cw(w).over));
+        check(c, cw(w).dragging() && cw(w).over.as_ref().is_some_and(|(p, why)| *p == Place::Box(11) && why.is_none()), format!("container: the place accepts ({:?})", cw(w).over));
         pointer_at(w, Some(to), false);
         true
     }));
     s.push(wait(3.0 * DELAY + 0.1));
     s.push(Box::new(|w, c| {
-        let on_five = items(w).host.racks[&CRATE].slot(5).is_some_and(|s| s.item.kind.as_str() == "extinguisher");
-        check(c, on_five && in_bar(w, "extinguisher") == 0 && mine(w) == 3, "container: the extinguisher lies on place 6, not in the bar".into());
+        let on_five = items(w).host.racks[&CRATE].slot(11).is_some_and(|s| s.item.kind.as_str() == "extinguisher");
+        check(c, on_five && in_bar(w, "extinguisher") == 0 && mine(w) == 3, "container: the extinguisher lies on the last place, not in the bar".into());
         end(w, c, "dragged".into());
         true
     }));

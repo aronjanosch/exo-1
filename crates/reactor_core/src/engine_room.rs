@@ -386,6 +386,16 @@ pub struct JunctionSave {
     pub overvolt: bool,
     pub voltage: f64,
     pub cooldown: f64,
+    /// The box broke and no fuse was fitted yet (#328). Old saves have none: false.
+    #[serde(default)]
+    pub blown: bool,
+}
+
+/// Why a repair of a junction box is refused (#328).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum RepairRefusal {
+    /// The box is blown: it needs a new fuse (`JunctionBox::fit_fuse`) before anyone repairs it.
+    NeedsFuse,
 }
 
 /// The ship's junction boxes (#322): JB-1 engine room, JB-2 corridor, JB-3 turret room.
@@ -402,6 +412,11 @@ pub struct JunctionBox {
     voltage: f64,
     /// Barotrauma's `overloadCooldownTimer`, s.
     cooldown: f64,
+    /// It broke (the condition fell to the broken state) and has no new fuse yet (#328). Set when the
+    /// box goes from working to broken, cleared by `fit_fuse`; a repair waits for that.
+    blown: bool,
+    /// Whether the condition worked at the last look, to see the moment it breaks.
+    was_working: bool,
 }
 
 impl JunctionBox {
@@ -413,15 +428,44 @@ impl JunctionBox {
             overvolt: false,
             voltage: 1.0,
             cooldown: 0.0,
+            blown: false,
+            was_working: true,
         }
     }
 
     pub fn to_save(&self) -> JunctionSave {
-        JunctionSave { condition: self.condition.to_save(), rng: self.rng.clone(), overvolt: self.overvolt, voltage: self.voltage, cooldown: self.cooldown }
+        JunctionSave { condition: self.condition.to_save(), rng: self.rng.clone(), overvolt: self.overvolt, voltage: self.voltage, cooldown: self.cooldown, blown: self.blown }
     }
 
     pub fn from_save(tuning: &RoomTuning, index: usize, s: &JunctionSave) -> JunctionBox {
-        JunctionBox { index, condition: Condition::from_save(tuning.junction, &s.condition), rng: s.rng.clone(), overvolt: s.overvolt, voltage: s.voltage, cooldown: s.cooldown }
+        let condition = Condition::from_save(tuning.junction, &s.condition);
+        let was_working = condition.functioning();
+        JunctionBox { index, condition, rng: s.rng.clone(), overvolt: s.overvolt, voltage: s.voltage, cooldown: s.cooldown, blown: s.blown, was_working }
+    }
+
+    /// Broke and waits for a fuse (#328).
+    pub fn blown(&self) -> bool {
+        self.blown
+    }
+
+    /// Whether a repair may start: a blown box needs its fuse first.
+    pub fn repair_allowed(&self) -> Result<(), RepairRefusal> {
+        if self.blown { Err(RepairRefusal::NeedsFuse) } else { Ok(()) }
+    }
+
+    /// Fits a new fuse: true when the box was blown (the caller uses one fuse up), false and nothing
+    /// changed when it was not.
+    pub fn fit_fuse(&mut self) -> bool {
+        std::mem::take(&mut self.blown)
+    }
+
+    /// Sees the moment the condition falls to broken, whoever damaged it (overvoltage, fire, a fault).
+    fn sync_blown(&mut self) {
+        let working = self.condition.functioning();
+        if self.was_working && !working {
+            self.blown = true;
+        }
+        self.was_working = working;
     }
 
     /// Whether the last step had overvoltage (the screen's OVERVOLT word).
@@ -453,6 +497,7 @@ impl JunctionBox {
     /// every box feels it); `own_*` are this box's share of the output and its groups' request.
     fn pass(&mut self, dt: f64, bus_supply_kw: f64, bus_demand_kw: f64, own_supply_kw: f64, own_demand_kw: f64, t: &RoomTuning) -> (f64, Vec<RoomEvent>) {
         let mut ev = Vec::new();
+        self.sync_blown();
         let supply = bus_supply_kw.max(0.0);
         let demand = bus_demand_kw.max(0.0);
         let through = if self.condition.functioning() { own_supply_kw.max(0.0) } else { 0.0 };
@@ -465,6 +510,7 @@ impl JunctionBox {
                 ev.push(RoomEvent::Sparks(self.index));
             }
         }
+        self.sync_blown();
         let own_demand = own_demand_kw.max(0.0);
         self.voltage = if own_demand > 0.0 { through / own_demand } else { 1.0 };
         (through, ev)
@@ -902,6 +948,32 @@ impl EngineRoom {
 
     pub fn junctions(&self) -> &[JunctionBox; JUNCTIONS] {
         &self.junctions
+    }
+
+    /// An incident (#328): box `i` breaks at once, with sparks and, if `fire`, a small fire at its spark point. A box that is
+    /// already broken is left alone (no events).
+    pub fn blow_junction(&mut self, i: usize, fire: bool) -> Vec<RoomEvent> {
+        let size = self.tuning.spark_fire_size;
+        let b = &mut self.junctions[i];
+        if !b.condition.functioning() {
+            return Vec::new();
+        }
+        let to = (b.condition.tuning().broken_below - 1.0).max(0.0);
+        let amount = (b.condition.value() - to).max(0.0);
+        let mut ev: Vec<RoomEvent> = b.condition.damage(amount).map(|e| RoomEvent::Device { source: Source::Junction(i), event: e }).into_iter().collect();
+        b.blown = true;
+        b.was_working = false;
+        ev.push(RoomEvent::Sparks(i));
+        if fire {
+            ev.push(RoomEvent::Fire { size, source: Source::Junction(i) });
+        }
+        ev
+    }
+
+    /// Whether box `i` gives its part of the ship power (#328): it works and at least one of its groups is switched on at its toggle.
+    /// The room lights and the canister box ask this; the reactor's own screens and the airlock cycle do not.
+    pub fn junction_passes(&self, i: usize) -> bool {
+        self.junctions[i].condition.functioning() && Group::ALL.iter().any(|g| g.junction() == i && self.grid.breaker(*g))
     }
 
     /// Whether the box `g` hangs on passes power (a broken box cuts only its own groups).

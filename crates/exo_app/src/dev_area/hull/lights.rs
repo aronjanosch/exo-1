@@ -56,9 +56,9 @@ const WARM: Color = Color::srgb(1.0, 0.9, 0.75);
 /// Peak intensity of the room's warm lamps, at full brightness.
 const ROOM_LAMP_INTENSITY: f32 = 60_000.0;
 /// Ours: a lamp whose junction box is out keeps this share of its light, reddish, so the room stays playable (#328).
-/// TODO(initiator): the share (start value 8 %) and the colour.
-const BOX_OUT_SHARE: f32 = 0.08;
-const BOX_OUT_COLOUR: Color = Color::srgb(1.0, 0.22, 0.12);
+/// TODO(initiator): the share (start value 10 %) and the colour.
+const BOX_OUT_SHARE: f32 = 0.1;
+const BOX_OUT_COLOUR: Color = Color::srgb(1.0, 0.04, 0.02);
 /// Ours: the emergency lamps' intensity while on. `TODO(initiator)`.
 const EMERGENCY_INTENSITY: f32 = 8_000.0;
 
@@ -75,6 +75,7 @@ pub(super) fn room_lights(
     mut frame: Local<u64>,
     mut state: Local<reactor_core::LightState>,
     mut lights: Query<(&RoomLight, &mut PointLight)>,
+    mut interior: ResMut<crate::interior::Interior>,
 ) {
     let voltage = lights_voltage(&items);
     *frame = frame.wrapping_add(1);
@@ -93,11 +94,13 @@ pub(super) fn room_lights(
             if !crate::dev_area::engineering::junction_boxes::box_passes(items.reactor.as_ref(), l.box_i) {
                 light.intensity = ROOM_LAMP_INTENSITY * BOX_OUT_SHARE;
                 light.color = BOX_OUT_COLOUR;
+                interior.levels[l.box_i] = BOX_OUT_SHARE;
                 continue;
             }
             light.color = WARM;
             let dim = if countdown && l.engine_room { 0.15 } else { 1.0 };
             light.intensity = ROOM_LAMP_INTENSITY * brightness as f32 * dim;
+            interior.levels[l.box_i] = brightness as f32;
         }
     }
 }

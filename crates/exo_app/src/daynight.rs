@@ -98,17 +98,20 @@ pub fn setup_lights(mut commands: Commands) {
 
 pub fn apply_lights(
     sun: Res<Sun>,
+    interior: Option<Res<crate::interior::Interior>>,
     mut suns: Query<(&mut DirectionalLight, &mut Transform), (With<SunLight>, Without<NightLight>)>,
     mut nights: Query<(&mut DirectionalLight, &mut Transform), (With<NightLight>, Without<SunLight>)>,
 ) {
     let l = &sun.light;
+    // No sun inside the ship: its shadows are off, so it would shine through the roofs (see `interior`).
+    let outside = interior.map_or(1.0, |i| 1.0 - i.amount);
     for (mut d, mut t) in &mut suns {
-        d.illuminance = l.sun_lux as f32;
+        d.illuminance = l.sun_lux as f32 * outside;
         d.color = rgb(l.sun_color);
         aim(&mut t, sun.dir);
     }
     for (mut d, mut t) in &mut nights {
-        d.illuminance = l.night_lux as f32;
+        d.illuminance = l.night_lux as f32 * outside;
         d.color = rgb(l.night_color);
         aim(&mut t, -sun.dir);
     }

@@ -152,6 +152,39 @@ pub(super) fn faults_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
     }));
     s.push(shot_step("faults-jb2-dark-near"));
     s.push(wait(0.5));
+    // The dark corridor seen along its length, then the lit engine room's open door seen from inside: the dark part stays dark, the lit one bright.
+    s.push(run("faults: the dark corridor along its length", 3.0, |w, c| {
+        if c.t == 0.0 {
+            let feet = ground(w, [-2.0, -9.2], 0.0);
+            place_walker(w, feet);
+        }
+        let t = ground(w, [-12.0, -9.2], 1.6);
+        face_towards(w, t);
+        (c.t > 1.0).then(|| "along".into())
+    }));
+    s.push(shot_step("faults-corridor-along"));
+    s.push(wait(0.3));
+    s.push(run("faults: in the lit engine room at the open door, looking into the dark corridor", 4.0, |w, c| {
+        if c.t == 0.0 {
+            w.resource_mut::<crate::dev_area::hull::EngineDoor>().open = true;
+            let feet = ground(w, [-14.0, -14.2], 0.0);
+            place_walker(w, feet);
+        }
+        let t = ground(w, [-14.0, -3.0], 1.6);
+        face_towards(w, t);
+        (c.t > 2.0).then(|| "doorway".into())
+    }));
+    s.push(shot_step("faults-engine-doorway"));
+    s.push(wait(0.3));
+    s.push(run("faults: back to the box", 3.0, |w, c| {
+        if c.t == 0.0 {
+            w.resource_mut::<crate::dev_area::hull::EngineDoor>().open = false;
+            let feet = ground(w, junction_front(BOX, 1.4), 0.0);
+            place_walker(w, feet);
+        }
+        look_box(w);
+        (c.t > 0.6).then(|| "back at the box".into())
+    }));
     s.push(run("faults: a repair try with the screwdriver is refused (no session, no ring), before and at the host", 6.0, |w, c| {
         look_box(w);
         if c.t < 0.3 {

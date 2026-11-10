@@ -176,6 +176,8 @@ pub enum ReactorAsk {
     SetThrottle(f64),
     /// The incident director's switch (r38, the dev faults screen's DIRECTOR toggle).
     SetDirector(bool),
+    /// The dev menu's "force an incident now" (#328): the director picks one at once, whatever the pacing.
+    ForceIncident,
     /// The SILENCE button on ST-01 (r40, #165): the sounding room alarms go quiet (`reactor_core::RoomAlarm::silence`).
     SilenceAlarms,
     /// The GN-01 screen's FIRE (r40): one shot from the capacitor, refused while reloading or empty. The
@@ -541,6 +543,8 @@ pub struct ReactorNews {
     pub junctions: [PartNews; JUNCTION_BOXES],
     /// Each box's fault lamp: damaged below its repair threshold or broken.
     pub junction_fault: [bool; JUNCTION_BOXES],
+    /// Each box broke and waits for a new fuse (#328): F with a fuse in hand fits it; the repair follows.
+    pub junction_blown: [bool; JUNCTION_BOXES],
     /// The oxygen generator's condition (r37), as the pump's.
     pub oxygen_generator: PartNews,
     /// Each wall section's damage, 0..1 (r37's breach, by section in r40; a section leaks above 0.1).
@@ -851,6 +855,7 @@ mod tests {
             pump: PartNews { share: 0.4, working: true },
             junctions: [PartNews { share: 1.0, working: true }, PartNews { share: 0.7, working: true }, PartNews { share: 0.0, working: false }],
             junction_fault: [false, true, true],
+            junction_blown: [false, false, true],
             oxygen_generator: PartNews { share: 0.6, working: true },
             breaches: [0.55, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0],
             director: true,
@@ -971,6 +976,7 @@ mod tests {
             ReactorAsk::Press(3),
             ReactorAsk::SetDirector(true),
             ReactorAsk::SetDirector(false),
+            ReactorAsk::ForceIncident,
             ReactorAsk::SilenceAlarms,
             ReactorAsk::ClearJam(true),
             ReactorAsk::ClearJam(false),

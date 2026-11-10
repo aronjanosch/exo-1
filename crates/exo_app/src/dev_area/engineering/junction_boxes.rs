@@ -9,7 +9,7 @@
 //!   So host and clients cannot disagree, and a breaker set from anywhere else (cold ship, dev faults) moves the toggle.
 //! - The door follows the repairs: the others by their public status (`Doing::Repairing(JunctionBox(i))`), the own player by the ring it runs.
 use crate::controls_kit::{Binding, KitBindings, Machine};
-use crate::dev_area::layout::{JUNCTION_MODEL, JUNCTION_SPOTS};
+use crate::dev_area::layout::{JUNCTION_BOX_SIZE, JUNCTION_LIFT, JUNCTION_MODEL, JUNCTION_SPOTS};
 use crate::dev_area::ship::ShipSet;
 use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
@@ -65,6 +65,26 @@ impl JunctionRoom {
             .min_by(|a, b| a.0.total_cmp(&b.0))
             .map(|(_, k)| k)
     }
+}
+
+/// The cabinet's volume in the model's frame (m): centre and half size, from `layout::JUNCTION_BOX_SIZE` and `JUNCTION_LIFT`.
+const BODY_CENTRE: [f64; 3] = [0.0, JUNCTION_LIFT + JUNCTION_BOX_SIZE[1] * 0.5, JUNCTION_BOX_SIZE[2] * 0.5];
+
+impl JunctionRoom {
+    /// Whether the view's ray hits the cabinet within `reach` (F with a fuse fits it there).
+    pub fn aims(&self, eye: DVec3, look: DVec3, reach: f64) -> bool {
+        let inv = self.rot.inverse();
+        let o = inv * (eye - self.origin) - DVec3::from(BODY_CENTRE);
+        let v = inv * look.normalize_or_zero();
+        let half = [JUNCTION_BOX_SIZE[0] * 0.5, JUNCTION_BOX_SIZE[1] * 0.5, JUNCTION_BOX_SIZE[2] * 0.5];
+        device_core::minigame::ray_hits_box(o.to_array(), v.to_array(), half, reach)
+    }
+}
+
+/// Box `i` gives its part of the ship power (#328): it works and one of its toggles is on. The room lights ask this on the news;
+/// the host's twin is `reactor_core::EngineRoom::junction_passes`. No news yet: it does.
+pub fn box_passes(n: Option<&item_core::wire::ReactorNews>, i: usize) -> bool {
+    n.is_none_or(|n| n.junctions[i].working && BOX_GROUPS[i].iter().any(|g| n.breakers[g.index()]))
 }
 
 pub fn machine() -> Machine {
@@ -197,6 +217,29 @@ mod tests {
 
     fn room() -> JunctionRoom {
         JunctionRoom { index: 0, origin: DVec3::ZERO, rot: DQuat::IDENTITY }
+    }
+
+    #[test]
+    fn the_view_aims_at_the_cabinet_body() {
+        let r = room();
+        let eye = DVec3::new(0.0, 1.3, 1.5);
+        assert!(r.aims(eye, DVec3::NEG_Z, 2.5), "straight at the door");
+        assert!(!r.aims(eye, DVec3::Z, 2.5), "away");
+        assert!(!r.aims(DVec3::new(2.0, 1.3, 1.5), DVec3::NEG_Z, 2.5), "beside the cabinet");
+        assert!(!r.aims(eye, DVec3::NEG_Z, 1.0), "out of reach");
+    }
+
+    #[test]
+    fn a_box_passes_on_the_news_only_working_and_with_a_toggle_on() {
+        use item_core::wire::{PartNews, ReactorNews};
+        let mut n = ReactorNews { junctions: [PartNews { share: 1.0, working: true }; 3], breakers: [true; 6], ..Default::default() };
+        assert!((0..3).all(|i| box_passes(Some(&n), i)) && box_passes(None, 1));
+        n.junctions[1].working = false;
+        assert!(!box_passes(Some(&n), 1) && box_passes(Some(&n), 0));
+        for g in BOX_GROUPS[2] {
+            n.breakers[g.index()] = false;
+        }
+        assert!(!box_passes(Some(&n), 2));
     }
 
     #[test]

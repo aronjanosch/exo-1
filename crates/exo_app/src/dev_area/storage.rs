@@ -61,6 +61,8 @@ pub fn contents(rack: RackId, defs: &ItemDefs) -> Container {
             put(&mut c, defs, "antimatter_canister", 3);
             put(&mut c, defs, "bandage", 4);
             put(&mut c, defs, "oxy", 2);
+            // Two spare fuses for the first blown junction boxes (#328). TODO(merge #326): they belong in Crate A of the storage room.
+            put(&mut c, defs, "fuse", 2);
         }
     }
     c

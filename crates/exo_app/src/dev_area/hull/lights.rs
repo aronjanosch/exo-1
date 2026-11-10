@@ -12,6 +12,8 @@ pub(super) struct RoomLight {
     alarm: bool,
     /// A warm lamp in the engine room: it dims while the implosion countdown runs (#325), so the red pulse reads.
     engine_room: bool,
+    /// The junction box that feeds this lamp (#328): broken or switched off, the lamp is a dim red glow.
+    box_i: usize,
 }
 
 /// Ours: a red lamp that is lit only in an emergency (the lights factor below 0.1).
@@ -28,14 +30,14 @@ pub(super) fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area:
         commands.entity(e).despawn();
     }
     let at = |p: [f64; 2], h: f64| area.ground(&planet, p, h).map(|(w, _)| w).unwrap_or(DVec3::ZERO);
-    let warm = Color::srgb(1.0, 0.9, 0.75);
+    let warm = WARM;
     let lamps = [([-16.5, -15.5], 2.9, false), ([-11.5, -15.5], 2.9, false), ([-15.0, -9.2], 2.9, false), ([-5.0, -9.2], 2.9, false), ([2.0, -9.2], 2.9, false), ([-14.0, -15.0], 2.6, true), ([-7.7, -9.2], 2.6, true), ([EQUIPMENT.centre[0] - 1.5, EQUIPMENT.centre[1]], 2.9, false), ([EQUIPMENT.centre[0] + 1.5, EQUIPMENT.centre[1]], 2.9, false), (AIRLOCK.centre, 2.9, false), (BRIDGE.centre, 2.9, false), (TURRET_ROOM.centre, 2.9, false), (LAB_ROOM.centre, 2.9, false), (MEDBAY_ROOM.centre, 2.9, false)];
     for (p, h, alarm) in lamps {
         let colour = if alarm { Color::srgb(1.0, 0.1, 0.05) } else { warm };
         let intensity = if alarm { 0.0 } else { 60_000.0 };
         made.push(
             commands
-                .spawn((PointLight { color: colour, intensity, range: 12.0, shadow_maps_enabled: false, ..default() }, Transform::default(), WorldPos(at(p, h)), RoomLight { alarm, engine_room: (p[0] - ROOM.centre[0]).abs() <= ROOM.half[0] && (p[1] - ROOM.centre[1]).abs() <= ROOM.half[1] }))
+                .spawn((PointLight { color: colour, intensity, range: 12.0, shadow_maps_enabled: false, ..default() }, Transform::default(), WorldPos(at(p, h)), RoomLight { alarm, engine_room: (p[0] - ROOM.centre[0]).abs() <= ROOM.half[0] && (p[1] - ROOM.centre[1]).abs() <= ROOM.half[1], box_i: box_of_point(p) }))
                 .id(),
         );
     }
@@ -49,8 +51,14 @@ pub(super) fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area:
     }
 }
 
+/// The room lamps' colour.
+const WARM: Color = Color::srgb(1.0, 0.9, 0.75);
 /// Peak intensity of the room's warm lamps, at full brightness.
 const ROOM_LAMP_INTENSITY: f32 = 60_000.0;
+/// Ours: a lamp whose junction box is out keeps this share of its light, reddish, so the room stays playable (#328).
+/// TODO(initiator): the share (start value 8 %) and the colour.
+const BOX_OUT_SHARE: f32 = 0.08;
+const BOX_OUT_COLOUR: Color = Color::srgb(1.0, 0.22, 0.12);
 /// Ours: the emergency lamps' intensity while on. `TODO(initiator)`.
 const EMERGENCY_INTENSITY: f32 = 8_000.0;
 
@@ -82,6 +90,12 @@ pub(super) fn room_lights(
     let countdown = items.reactor.as_ref().is_some_and(crate::dev_area::engineering::countdown::countdown_on);
     for (l, mut light) in &mut lights {
         if !l.alarm {
+            if !crate::dev_area::engineering::junction_boxes::box_passes(items.reactor.as_ref(), l.box_i) {
+                light.intensity = ROOM_LAMP_INTENSITY * BOX_OUT_SHARE;
+                light.color = BOX_OUT_COLOUR;
+                continue;
+            }
+            light.color = WARM;
             let dim = if countdown && l.engine_room { 0.15 } else { 1.0 };
             light.intensity = ROOM_LAMP_INTENSITY * brightness as f32 * dim;
         }

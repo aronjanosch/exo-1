@@ -3,9 +3,9 @@
 //! gone from the dev zone (#307); scenarios ask directly (`Items::ask_reactor`), and a dev aid can
 //! send the same `ReactorAsk`s.
 use crate::dev_area::*;
-use crate::dev_area::fire::FireConfig;
+use crate::dev_area::fire::{FireConfig, FireGrid, FireModel};
 use crate::dev_area::hull::ShipAir;
-use crate::dev_area::ship::{fault, host_asks, route, ReactorConfig, ReactorCounts, ReactorSim, ShipEvents, ShipSet};
+use crate::dev_area::ship::{fault, fire_count, host_asks, incident_events, situation_of, route, ReactorConfig, ReactorCounts, ReactorSim, ShipEvents, ShipSet};
 use crate::items::Items;
 use item_core::wire::{ReactorAsk, ReactorFault};
 use reactor_core::{RoomEvent, Source, Tuning};
@@ -18,16 +18,22 @@ pub fn plugin(app: &mut App) {
 }
 
 fn is_mine(a: &ReactorAsk) -> bool {
-    matches!(a, ReactorAsk::Trigger(_) | ReactorAsk::Reset | ReactorAsk::SetDirector(_) | ReactorAsk::SetBots(_) | ReactorAsk::Ambush(_))
+    matches!(a, ReactorAsk::Trigger(_) | ReactorAsk::Reset | ReactorAsk::SetDirector(_) | ReactorAsk::ForceIncident | ReactorAsk::SetBots(_) | ReactorAsk::Ambush(_))
 }
 
-fn asks(mut items: ResMut<Items>, cfg: Res<ReactorConfig>, fires: Res<FireConfig>, mut sim: ResMut<ReactorSim>, mut air: ResMut<ShipAir>, mut counts: ResMut<ReactorCounts>, mut events: ResMut<ShipEvents>) {
+fn asks(mut items: ResMut<Items>, cfg: Res<ReactorConfig>, fires: Res<FireConfig>, mut sim: ResMut<ReactorSim>, mut air: ResMut<ShipAir>, mut counts: ResMut<ReactorCounts>, mut events: ResMut<ShipEvents>, grid: Res<FireGrid>, model: Res<FireModel>) {
     for a in host_asks(&mut items, is_mine) {
         match a {
             // The fire starts in the air (the fire step), so it goes out as the room's event.
             ReactorAsk::Trigger(ReactorFault::Fire) => {
                 info!("dev: fire");
                 events.0.push(RoomEvent::Fire { size: fires.0.start_size, source: Source::Reactor });
+            }
+            // The dev menu's forced incident (#328): the director picks, the room's events carry it out.
+            ReactorAsk::ForceIncident => {
+                let situation = situation_of(&sim, fire_count(&air, &grid, &model));
+                let incident = sim.director.force(&situation);
+                events.0.extend(incident_events(&mut sim.room, incident, fires.0.start_size));
             }
             // The fires are the air's: a fresh room starts with a fresh air (no fire survives).
             ReactorAsk::Reset => {

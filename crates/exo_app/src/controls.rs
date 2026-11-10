@@ -113,6 +113,9 @@ pub enum Tap {
     DevEquals,
     /// The 13th dev command (`[`).
     DevBracket,
+    /// The 14th and 15th dev commands (`]` and `\`, #328).
+    DevBracketRight,
+    DevBackslash,
     /// SC model: master mode SCM or NAV. TODO(initiator): the key (B for now).
     MasterMode,
     /// SC model: comstab on or off. TODO(initiator): the key (U for now).
@@ -176,7 +179,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 51] = [
+    pub const ALL: [Tap; 53] = [
         Tap::Help,
         Tap::DevMenu,
         Tap::Dev1,
@@ -192,6 +195,8 @@ impl Tap {
         Tap::DevMinus,
         Tap::DevEquals,
         Tap::DevBracket,
+        Tap::DevBracketRight,
+        Tap::DevBackslash,
         Tap::Interact,
         Tap::Throw,
         Tap::HoverAssist,
@@ -261,6 +266,8 @@ impl Tap {
             Tap::DevMinus => "dev_minus",
             Tap::DevEquals => "dev_equals",
             Tap::DevBracket => "dev_bracket",
+            Tap::DevBracketRight => "dev_bracket_right",
+            Tap::DevBackslash => "dev_backslash",
             Tap::CameraFx => "camera_fx",
             Tap::MasterMode => "master_mode",
             Tap::Comstab => "comstab",
@@ -486,6 +493,8 @@ impl Bindings {
                 (Tap::DevMinus, None) => Ok(vec![Input::Key(KeyCode::Minus)]),
                 (Tap::DevEquals, None) => Ok(vec![Input::Key(KeyCode::Equal)]),
                 (Tap::DevBracket, None) => Ok(vec![Input::Key(KeyCode::BracketLeft)]),
+                (Tap::DevBracketRight, None) => Ok(vec![Input::Key(KeyCode::BracketRight)]),
+                (Tap::DevBackslash, None) => Ok(vec![Input::Key(KeyCode::Backslash)]),
                 (Tap::CameraFx, None) => Ok(vec![Input::Key(KeyCode::F9)]),
                 (Tap::MasterMode, None) => Ok(vec![Input::Key(KeyCode::KeyB)]),
                 (Tap::Comstab, None) => Ok(vec![Input::Key(KeyCode::KeyU)]),

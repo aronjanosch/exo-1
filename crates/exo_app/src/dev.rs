@@ -20,11 +20,11 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, draw_dev.in_set(crate::phases::Frame::Hud));
 }
 
-pub const COMMANDS: [&str; 13] = ["Grant every licence", "+1000 credits", "Refill the boost", "Always day", "Always night", "Jump to day (cycle runs)", "Jump to night (cycle runs)", "Ship to the next settlement", "Noclip on/off", "God mode on/off", "Wear on/off", "Reactor: cold start", "Reactor: make it critical"];
+pub const COMMANDS: [&str; 15] = ["Grant every licence", "+1000 credits", "Refill the boost", "Always day", "Always night", "Jump to day (cycle runs)", "Jump to night (cycle runs)", "Ship to the next settlement", "Noclip on/off", "God mode on/off", "Wear on/off", "Reactor: cold start", "Reactor: make it critical", "Director: on/off", "Fault: force an incident now"];
 
-const KEYS: [Tap; 13] = [Tap::Dev1, Tap::Dev2, Tap::Dev3, Tap::Dev4, Tap::Dev5, Tap::Dev6, Tap::Dev7, Tap::Dev8, Tap::Dev9, Tap::Dev0, Tap::DevMinus, Tap::DevEquals, Tap::DevBracket];
+const KEYS: [Tap; 15] = [Tap::Dev1, Tap::Dev2, Tap::Dev3, Tap::Dev4, Tap::Dev5, Tap::Dev6, Tap::Dev7, Tap::Dev8, Tap::Dev9, Tap::Dev0, Tap::DevMinus, Tap::DevEquals, Tap::DevBracket, Tap::DevBracketRight, Tap::DevBackslash];
 /// The keys' names in the menu, in the order of `KEYS`.
-const KEY_NAMES: [&str; 13] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "["];
+const KEY_NAMES: [&str; 15] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "[", "]", "\\"];
 
 /// Normal wear of the ship's machines (`reactor_core::EngineRoom::set_wear`): off by default, so the
 /// ship stands ready while nobody plays with it; the dev menu turns it on to test the repairs.
@@ -54,6 +54,12 @@ pub struct DevMenu {
     pub cold_reactor: bool,
     /// F10 "Reactor: make it critical" (#325): the engineering glue puts the running reactor to critical heat with the timer at about 75 %.
     pub critical_reactor: bool,
+    /// F10 "Director: on/off" (#328): the incident glue flips the director.
+    pub director_toggle: bool,
+    /// F10 "Fault: force an incident now" (#328): the incident glue asks the host for one.
+    pub force_incident: bool,
+    /// The director's state as the last news said (the menu shows it).
+    pub director_on: bool,
 }
 
 /// Every licence the data has, earned by the host's client (the ones it has stay as they are).
@@ -151,6 +157,14 @@ pub fn update_dev(
                 menu.critical_reactor = true;
                 continue;
             }
+            if i == 13 {
+                menu.director_toggle = true;
+                continue;
+            }
+            if i == 14 {
+                menu.force_incident = true;
+                continue;
+            }
             let now = clock.t;
             let at_hour = |h: f64| ps.as_ref().zip(up).and_then(|(ps, up)| ps.time_for_hour(up, to_star, h, now));
             menu.last = Some(run(i, &mut gp, &mut ships, &mut clock, at_hour));
@@ -245,8 +259,11 @@ fn draw_dev(menu: Res<DevMenu>, mut root: Query<&mut Node, With<DevRoot>>, mut t
     }
     if let Ok(mut t) = text.single_mut() {
         let mut s = String::from("DEV   (F10 closes)\n");
-        for (k, c) in KEY_NAMES.iter().zip(COMMANDS) {
+        for (i, (k, c)) in KEY_NAMES.iter().zip(COMMANDS).enumerate() {
             s.push_str(&format!("\n{k}   {c}"));
+            if i == 13 {
+                s.push_str(if menu.director_on { "   [on]" } else { "   [off]" });
+            }
         }
         if let Some(l) = &menu.last {
             s.push_str(&format!("\n\n{l}"));

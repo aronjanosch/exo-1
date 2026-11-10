@@ -11,7 +11,7 @@ use crate::dev_area::hull::ShipAir;
 use crate::items::{Items, NetOut, Role};
 use item_core::wire::{Alarm, BotNews, BreakerGroup, EnemyNews, EnemyOutcome, CanisterSlot, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, StartStage, GRAPH_POINTS, ROOMS};
 use reactor_core::bots::{Bots, Row};
-use reactor_core::director::Situation;
+use reactor_core::director::{Incident, Situation};
 use reactor_core::engine_room::EngineSave;
 use reactor_core::RoomAlarm;
 use reactor_core::{AlarmLevel, Director, EngineRoom, Fault, Group, Input, Outcome, ReactorEvent, RoomEvent, Tuning, Warnings};
@@ -112,6 +112,12 @@ impl ReactorSim {
     /// The CLEAR JAM hold's time (r41): while it is on, the gun's jam clears after its hold.
     /// The gun's skill and clearing speed follow the bots (r42): a bot at GN-01 has its skill and clears at
     /// its own speed; a player's gun has skill 0 and clears at full speed.
+    /// The reactor's implosion timer runs: aboard, or the ejected core's outside.
+    pub fn countdown_running(&self) -> bool {
+        let r = self.room.reactor();
+        r.outside_eta_s().is_some() || implosion_eta(r.timers().1, r.tuning().implosion_delay_s, r.imploded()).is_some_and(f64::is_finite)
+    }
+
     pub fn tick_jam(&mut self, dt: f64) {
         let w = self.room.weapons_mut();
         w.set_skill(self.bots.gun_skill());
@@ -181,6 +187,7 @@ impl ReactorSim {
             pump: part(self.room.pump().condition().fraction(), self.room.pump().condition().functioning()),
             junctions: std::array::from_fn(|i| part(self.room.junction(i).condition().fraction(), self.room.junction(i).condition().functioning())),
             junction_fault: std::array::from_fn(|i| self.room.junction(i).condition().needs_repair() || !self.room.junction(i).condition().functioning()),
+            junction_blown: std::array::from_fn(|i| self.room.junction(i).blown()),
             oxygen_generator: part(self.room.oxygen_generator().condition().fraction(), self.room.oxygen_generator().condition().functioning()),
             breaches: std::array::from_fn(|i| self.room.hull().damage(i)),
             lamps: lamps_of(&self.room.warnings()),
@@ -474,7 +481,7 @@ pub fn plugin(app: &mut App) {
 /// reactor's controls, the director may break a device, and the events go to `ShipEvents`. A client
 /// sends its asks to the host.
 #[allow(clippy::too_many_arguments)]
-fn ship_step(time: Res<Time>, mut items: ResMut<Items>, mut sim: ResMut<ReactorSim>, mut events: ResMut<ShipEvents>, air: Res<ShipAir>, grid: Res<FireGrid>, model: Res<FireModel>, wear: Res<crate::dev::Wear>) {
+fn ship_step(time: Res<Time>, mut items: ResMut<Items>, mut sim: ResMut<ReactorSim>, mut events: ResMut<ShipEvents>, air: Res<ShipAir>, grid: Res<FireGrid>, model: Res<FireModel>, wear: Res<crate::dev::Wear>, fires: Res<crate::dev_area::fire::FireConfig>) {
     let asks = std::mem::take(&mut items.reactor_asks);
     if items.role == Role::Client {
         for a in asks {
@@ -490,17 +497,35 @@ fn ship_step(time: Res<Time>, mut items: ResMut<Items>, mut sim: ResMut<ReactorS
     sim.room.set_wear(wear.0);
     let stepped = sim.room.step(dt, input);
     events.0.extend(stepped);
-    // The incident director (r38): its report is the room's devices and heat, the fires in
-    // the rooms and the engine room's oxygen; it breaks at most one device here.
-    let fires = match *model {
+    // The incident director (#328): its report is the blown boxes, the fires and the countdown; it starts at most one
+    // incident here.
+    let situation = situation_of(&sim, fire_count(&air, &grid, &model));
+    if let Some(incident) = sim.director.step(dt, &situation) {
+        events.0.extend(incident_events(&mut sim.room, incident, fires.0.start_size));
+    }
+}
+
+/// Fires burning in the rooms the crew is in (the engine room, the corridor, the bridge).
+pub fn fire_count(air: &ShipAir, grid: &FireGrid, model: &FireModel) -> u32 {
+    let n = match *model {
         FireModel::Point => [air.engine, air.corridor, air.bridge].into_iter().map(|room| air.deck.fires_in(room).count()).sum::<usize>(),
         FireModel::Grid => grid.0.burning().count(),
-    } as u32;
-    let situation = Situation::of_room(&sim.room, fires, air.deck.room(air.engine).oxygen_fraction());
-    if let Some(f) = sim.director.step(dt, &situation) {
-        info!("ship: director {f:?}");
-        let broke = sim.room.trigger(f);
-        events.0.extend(broke);
+    };
+    n as u32
+}
+
+/// What the director is told.
+pub fn situation_of(sim: &ReactorSim, fires: u32) -> Situation {
+    Situation { blown: std::array::from_fn(|i| sim.room.junction(i).blown()), fires, countdown: sim.countdown_running() }
+}
+
+/// What an incident does to the room: the box breaks (sparks, maybe a fire), or a machine catches fire. The fires go out as
+/// the room's events, so the fire module places them (`layout::ignition_at`).
+pub fn incident_events(room: &mut EngineRoom, incident: Incident, machine_fire: f64) -> Vec<RoomEvent> {
+    info!("ship: director {incident:?}");
+    match incident {
+        Incident::JunctionFault { index, fire } => room.blow_junction(index, fire),
+        Incident::MachineFire(source) => vec![RoomEvent::Fire { size: machine_fire, source }],
     }
 }
 

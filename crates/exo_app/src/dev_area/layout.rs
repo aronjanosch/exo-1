@@ -185,6 +185,19 @@ pub fn place_of(p: [f64; 2]) -> Place {
     }
 }
 
+/// The junction box whose part of the ship a floor point is in (#328): JB-1 the engine room; JB-2 the corridor, the equipment
+/// room, the airlock and the medbay (and the storage room, which counts as corridor); JB-3 the bridge, the turret room and the lab.
+/// TODO(initiator): the medbay hangs on JB-2.
+pub fn box_of_point(p: [f64; 2]) -> usize {
+    if ROOM.contains(p) {
+        0
+    } else if BRIDGE.contains(p) || TURRET_ROOM.contains(p) || LAB_ROOM.contains(p) {
+        2
+    } else {
+        1
+    }
+}
+
 /// The floor area of the rooms that share the corridor's air (m²): the equipment room has its own.
 pub const CORRIDOR_AREA: f64 = 4.0 * (CORRIDOR.half[0] * CORRIDOR.half[1] + TURRET_ROOM.half[0] * TURRET_ROOM.half[1] + LAB_ROOM.half[0] * LAB_ROOM.half[1] + MEDBAY_ROOM.half[0] * MEDBAY_ROOM.half[1]);
 /// The equipment room's floor area (m²).

@@ -106,6 +106,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 | `extinguisher` | The extinguisher's supply: wear, empty, refill at the corridor rack. |
 | `dig` | The dig run (#324): cut a chunk of ore with the welder, pick it up, store it in Crate B; no breath inside the dig site without a suit, none lost outside. |
 | `fabricator` | The fabricator (#326): ore into the input places through the container path, F on the push button, a fuse in the output place and the inputs gone; one ore is no recipe and the button refuses; a power cut pauses a run and it resumes. |
+| `sniffer` | The sniffer and the fizz pockets (#333): the signal rises from 15 m to 6 m to 0.5 m from a pocket, a hold of LMB away from it opens nothing, a hold on it opens the vent, F with an empty jar fills one three times (a fourth is refused, the pocket is spent and a new hidden one lies elsewhere), two fizz jars make a full extinguisher at the fabricator. Pictures in a window run: the sniffer held with the bar about half, a puffing vent from 3 m. |
 | `ore_tub` | The ore tub (#327): fill the standing tub through the container window, carry it (no window, no Open while carried), a full tub walks slower than an empty one, the load survives a save, the object budget keeps tubs, empty it into Crate B; nothing lost. |
 | `repair` | Repair at the junction box by holding, with the ring off (the pump has no housing now). |
 | `savefile` | Save, restart, load: the state that must survive comes back. |

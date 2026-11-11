@@ -103,7 +103,9 @@ fn all() -> Vec<Item> {
 /// A container's slot rules, empty. Suit locker: the suit only; box: air canisters; equipment locker: tools.
 pub fn empty(rack: RackId) -> Container {
     let (n, tag) = if is_box(rack) { (BOX_PLACES, "air_canister") } else if (suit_rack(0)..=suit_rack(ALL_SUIT_LOCKERS - 1)).contains(&rack) { (1, "suit") } else { (LOCKER_PLACES, "tool") };
-    Container::new(vec![SlotRule::tagged(1, &[tag], &[]); n], Access::Open)
+    // An equipment locker also holds the empty jars of the fizz errand (#333).
+    let tags: &[&str] = if tag == "tool" { &["tool", "jar"] } else { &[tag] };
+    Container::new(vec![SlotRule::tagged(1, tags, &[]); n], Access::Open)
 }
 
 /// A container with its start stock: the room's first two suit lockers and both pad zone lockers hold
@@ -131,6 +133,14 @@ pub fn contents(rack: RackId, defs: &ItemDefs) -> Container {
     // A hand lamp in each of the room's two lockers (#329).
     if rack == locker_rack(0) || rack == locker_rack(1) {
         put(&mut c, "hand_lamp");
+    }
+    // The sniffer in the locker without the welder, and two empty jars in each locker (#333).
+    if rack == locker_rack(1) {
+        put(&mut c, "sniffer");
+    }
+    if rack == locker_rack(0) || rack == locker_rack(1) {
+        put(&mut c, "jar");
+        put(&mut c, "jar");
     }
     c
 }
@@ -240,6 +250,9 @@ mod tests {
         assert_eq!(count("suit"), 2);
         assert_eq!(count("air_canister"), 2);
         assert_eq!(count("welder"), 1);
+        assert_eq!(count("sniffer"), 1);
+        assert_eq!(count("jar"), 4, "four empty jars (#333)");
+        assert_eq!(contents(locker_rack(0), &d).count(&ItemKind::new("sniffer")), 0, "the sniffer is in the locker without the welder");
     }
 
     #[test]

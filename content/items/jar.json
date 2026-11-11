@@ -1,0 +1,12 @@
+{
+  "_comment": "An empty jar (#333): F at a puffing vent with it selected fills it (use fill_jar takes one jar and the host hands a fizz jar). TODO(initiator): shape, mass, colour.",
+  "id": "jar",
+  "name": "Empty jar",
+  "code": "JAR",
+  "take": "collect",
+  "hands": 1,
+  "stack": 4,
+  "use": "fill_jar",
+  "tags": ["small", "jar"],
+  "shape": { "extents": [0.08, 0.12, 0.08], "mass": 0.15, "colour": [0.78, 0.8, 0.82] }
+}

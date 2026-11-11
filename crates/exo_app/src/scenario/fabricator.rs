@@ -16,12 +16,12 @@ use item_core::Request;
 const ORE: &str = "grumblite";
 const PART: &str = "fuse";
 
-fn machine(w: &mut World) -> FabMachine {
+pub(super) fn machine(w: &mut World) -> FabMachine {
     let mut q = w.query::<&FabMachine>();
     *q.single(w).expect("the fabricator stands there")
 }
 
-fn rack_count(w: &World, kind: &str) -> u32 {
+pub(super) fn rack_count(w: &World, kind: &str) -> u32 {
     items(w).host.racks.get(&RACK).map_or(0, |c| c.count(&ItemKind::new(kind)))
 }
 
@@ -38,7 +38,7 @@ fn total(w: &World, kind: &str) -> u32 {
     items(w).host.inventory(LOCAL).count(kind) + rack_count(w, kind)
 }
 
-fn fab(w: &World) -> &FabState {
+pub(super) fn fab(w: &World) -> &FabState {
     w.resource::<FabState>()
 }
 
@@ -57,11 +57,11 @@ fn screen_words(w: &World) -> Vec<String> {
     }).collect()
 }
 
-fn says(w: &World, word: &str) -> bool {
+pub(super) fn says(w: &World, word: &str) -> bool {
     screen_words(w).iter().any(|t| t == word)
 }
 
-fn ask(w: &mut World, req: Request) -> Result<u32, item_core::Reject> {
+pub(super) fn ask(w: &mut World, req: Request) -> Result<u32, item_core::Reject> {
     let now = w.resource::<Time>().elapsed_secs_f64();
     w.resource_mut::<Items>().request(now, req)
 }
@@ -73,12 +73,12 @@ fn give(w: &mut World, id: &str, n: u32) {
 }
 
 /// Stands in front of the machine, a little to its button's side.
-fn stand_before(w: &mut World) {
+pub(super) fn stand_before(w: &mut World) {
     let at = machine(w).world([0.3, 0.3, 1.4]);
     place_walker(w, at);
 }
 
-fn look_at_button(w: &mut World) {
+pub(super) fn look_at_button(w: &mut World) {
     let at = machine(w).button_at;
     look_at(w, at);
 }
@@ -91,6 +91,11 @@ fn look_at_hatch(w: &mut World) {
 
 /// Opens the container window's host lock, stores the bar's ore into one input, closes again.
 fn load(what: &'static str, rack_slot: usize) -> Vec<Step> {
+    load_item(what, ORE, rack_slot)
+}
+
+/// The same for any item kind in the bar (the sniffer scenario loads fizz jars).
+pub(super) fn load_item(what: &'static str, kind: &'static str, rack_slot: usize) -> Vec<Step> {
     vec![
         Box::new(move |w, c| {
             begin(w, c, what);
@@ -100,8 +105,8 @@ fn load(what: &'static str, rack_slot: usize) -> Vec<Step> {
         }),
         wait(3.0 * DELAY),
         Box::new(move |w, c| {
-            let Some(slot) = bar_slot(w, ORE) else {
-                check(c, false, format!("{what}: ore in the bar"));
+            let Some(slot) = bar_slot(w, kind) else {
+                check(c, false, format!("{what}: {kind} in the bar"));
                 return true;
             };
             let r = ask(w, Request::StoreAt { slot, rack: RACK, rack_slot });
@@ -119,7 +124,7 @@ fn load(what: &'static str, rack_slot: usize) -> Vec<Step> {
 }
 
 /// Aims at the button, checks the prompt and taps F once.
-fn push(what: &'static str) -> Step {
+pub(super) fn push(what: &'static str) -> Step {
     Box::new(move |w, c| {
         look_at_button(w);
         if c.t == 0.0 {
@@ -315,7 +320,7 @@ pub(super) fn fabricator_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static st
     s.push(Box::new(|w, c| {
         check(c, fab(w).runs == 2 && total(w, PART) == 2 && total(w, ORE) == 0, format!("fabricator: two runs, two fuses, no ore left ({} runs, fuse {}, ore {})", fab(w).runs, total(w, PART), total(w, ORE)));
         let cfg = w.resource::<FabCfg>().0.recipes.len();
-        check(c, cfg == 3, "fabricator: the three recipes are loaded".into());
+        check(c, cfg == 4, "fabricator: the four recipes are loaded".into());
         end(w, c, "done".into());
         true
     }));

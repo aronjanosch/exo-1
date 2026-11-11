@@ -103,9 +103,9 @@ pub fn housing() -> PlaceholderBox {
     PlaceholderBox { id: HOUSING.into(), zone: layout::STORAGE_ROOM, local_pos: AT, size: SIZE, turn_deg: TURN_DEG, colour: [0.42, 0.45, 0.5] }
 }
 
-/// The rack: two input places taking ore (stacks of three), and the output place that only gives.
+/// The rack: two input places taking ore or chemicals (fizz jars, #333; stacks of three), and the output place that only gives.
 pub fn rack() -> Container {
-    Container::new(vec![SlotRule::tagged(3, &["ore"], &[]), SlotRule::tagged(3, &["ore"], &[]), SlotRule::take_only(OUTPUT_CAP)], Access::Open)
+    Container::new(vec![SlotRule::tagged(3, &["ore", "chem"], &[]), SlotRule::tagged(3, &["ore", "chem"], &[]), SlotRule::take_only(OUTPUT_CAP)], Access::Open)
 }
 
 /// What the input places hold, by item, and what the output place holds.

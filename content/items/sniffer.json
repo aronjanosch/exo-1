@@ -1,0 +1,13 @@
+{
+  "_comment": "The sniffer (#333): held, it ticks faster and its back bar grows the nearer a fizz pocket is; holding LMB near a pocket taps it open (dev_area/sniffer.rs, values in gameplay/dig/dig.json). `use` only names the tool; keeps_on_use because nothing is used up. TODO(initiator): shape, mass, colour.",
+  "id": "sniffer",
+  "name": "Sniffer",
+  "code": "SNF",
+  "take": "collect",
+  "hands": 1,
+  "stack": 1,
+  "use": "sniff",
+  "keeps_on_use": true,
+  "tags": ["small", "tool"],
+  "shape": { "extents": [0.08, 0.06, 0.22], "mass": 0.5, "colour": [0.1, 0.62, 0.62] }
+}

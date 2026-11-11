@@ -1,0 +1,11 @@
+{
+  "_comment": "A jar of fizz gas (#333): two of them make an extinguisher at the fabricator (#326). TODO(initiator): shape, mass, colour.",
+  "id": "fizz_jar",
+  "name": "Fizz jar",
+  "code": "FIZ",
+  "take": "collect",
+  "hands": 1,
+  "stack": 4,
+  "tags": ["small", "chem"],
+  "shape": { "extents": [0.08, 0.12, 0.08], "mass": 0.3, "colour": [0.96, 0.97, 1.0] }
+}

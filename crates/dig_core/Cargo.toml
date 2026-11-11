@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 serde = { workspace = true }
 content_core = { workspace = true }
+gameplay_core = { workspace = true }

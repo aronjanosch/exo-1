@@ -12,7 +12,7 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use grab_core::CrateSize;
 use item_core::container::Stack;
-use item_core::wire::{BotStation, FireNews, PublicStatus, ReactorAsk, ReactorNews, RepairAsk, RoomAsk, RoomNews, SprayAsk, Vitals, CutAsk, DigNews, FabAsk, FabNews};
+use item_core::wire::{BotStation, FireNews, PublicStatus, ReactorAsk, ReactorNews, RepairAsk, RoomAsk, RoomNews, SprayAsk, Vitals, CutAsk, DigNews, FabAsk, FabNews, PocketNews, TapAsk};
 use item_core::{Action, Client, Event, FrameRef, Host, ItemDefs, LooseId, Placement, PlayerId, Reject, Request};
 use walker_core::Frame;
 
@@ -74,6 +74,10 @@ pub enum NetOut {
     CutAsk(CutAsk),
     /// Host to the clients: the dig site's veins (#324).
     Dig { to: Option<PlayerId>, d: DigNews },
+    /// Client to host: the sniffer's tap (#333).
+    TapAsk(TapAsk),
+    /// Host to the clients: the fizz pockets (#333).
+    Pockets { to: Option<PlayerId>, n: PocketNews },
     /// Client to host: the fabricator's button (#326).
     FabAsk(FabAsk),
     /// Host to the clients: the fabricator's screen and glow (#326).
@@ -165,6 +169,11 @@ pub struct DigLink {
     /// The veins as the host has them; a client takes it from the wire. None until the first one.
     pub news: Option<DigNews>,
     pub asks: Vec<(PlayerId, CutAsk)>,
+    /// The fizz pockets as the host has them (#333); a client takes it from the wire.
+    pub pockets: Option<PocketNews>,
+    pub tap_asks: Vec<(PlayerId, TapAsk)>,
+    /// Jars the host took out of a hand at an open vent (#333): the player and the pocket; `sniffer::fill_jars` fills them.
+    pub jar_fills: Vec<(PlayerId, u8)>,
 }
 
 /// Whether the host can simulate an action's placement: a cabin is the host's ship. (Other
@@ -242,6 +251,14 @@ impl Items {
             self.net_out.push(NetOut::CutAsk(a));
         } else {
             self.dig.asks.push((self.me(), a));
+        }
+    }
+
+    pub fn ask_tap(&mut self, a: TapAsk) {
+        if self.role == Role::Client {
+            self.net_out.push(NetOut::TapAsk(a));
+        } else {
+            self.dig.tap_asks.push((self.me(), a));
         }
     }
 
@@ -503,6 +520,11 @@ impl Items {
                         && let Some(into) = load_into
                     {
                         self.fuse_fits.push((*player, into));
+                    }
+                    if effect == crate::dev_area::sniffer::FILL_JAR
+                        && let Some(into) = load_into
+                    {
+                        self.dig.jar_fills.push((*player, into));
                     }
                     if effect == crate::dev_area::engineering::canisters::LOAD
                         && let Some((item, life)) = held.clone()

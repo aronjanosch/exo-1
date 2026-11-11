@@ -1,8 +1,9 @@
 {
-  "_comment": "The fabricator (#326): ore in, a part out. Every recipe and time is a starting value, TODO(initiator). inputs: item ids and counts spread over the two input places; output: what lands in the output place; seconds: running time while the ship gives power. The grid has no per-machine demand yet, so the machine only needs the master live (like the canister boxes).",
+  "_comment": "The fabricator (#326): ore in, a part out (and fizz jars in, an extinguisher out, #333). Every recipe and time is a starting value, TODO(initiator). inputs: item ids and counts spread over the two input places; output: what lands in the output place; seconds: running time while the ship gives power. The grid has no per-machine demand yet, so the machine only needs the master live (like the canister boxes).",
   "recipes": [
     { "inputs": [{ "item": "grumblite", "count": 2 }], "output": { "item": "fuse", "count": 1 }, "seconds": 12 },
     { "inputs": [{ "item": "wobble_quartz", "count": 3 }], "output": { "item": "antimatter_canister", "count": 1 }, "seconds": 30 },
-    { "inputs": [{ "item": "snoozium", "count": 2 }], "output": { "item": "coolant_canister", "count": 1 }, "seconds": 15 }
+    { "inputs": [{ "item": "snoozium", "count": 2 }], "output": { "item": "coolant_canister", "count": 1 }, "seconds": 15 },
+    { "inputs": [{ "item": "fizz_jar", "count": 2 }], "output": { "item": "extinguisher", "count": 1 }, "seconds": 20 }
   ]
 }

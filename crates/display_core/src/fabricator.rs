@@ -51,7 +51,7 @@ fn shapes(face: &Face) -> Vec<Shape> {
         Face::Ready { from, to } => {
             // A long recipe goes on two lines so it stays readable.
             let one = format!("{from} > {to}");
-            if one.chars().count() <= 20 {
+            if one.chars().count() <= 25 {
                 s.push(line(70.0, 70.0, &one, 40.0, TextFace::Mono, Ink::Fg1));
             } else {
                 s.push(line(56.0, 56.0, from, 38.0, TextFace::Mono, Ink::Fg1));
@@ -93,6 +93,7 @@ mod tests {
             Face::Load,
             Face::Ready { from: "2 GRUMBLITE".into(), to: "FUSE".into() },
             Face::Ready { from: "3 WOBBLE QUARTZ".into(), to: "ANTIMATTER CANISTER".into() },
+            Face::Ready { from: "2 FIZZ JAR".into(), to: "EXTINGUISHER".into() },
             Face::NoRecipe,
             Face::Running { product: "COOLANT CANISTER".into(), fraction: 0.4, left_s: 9.2 },
             Face::Running { product: "FUSE".into(), fraction: f64::NAN, left_s: f64::NAN },
@@ -116,6 +117,9 @@ mod tests {
         assert!(has(&Face::Load, "LOAD ORE") && has(&Face::NoRecipe, "NO RECIPE") && has(&Face::NoPower, "NO POWER"));
         let ready = Face::Ready { from: "2 GRUMBLITE".into(), to: "FUSE".into() };
         assert!(has(&ready, "2 GRUMBLITE > FUSE") && has(&ready, "PUSH TO START"));
+        // The fizz recipe (#333) stays one line.
+        let fizz = Face::Ready { from: "2 FIZZ JAR".into(), to: "EXTINGUISHER".into() };
+        assert!(has(&fizz, "2 FIZZ JAR > EXTINGUISHER"), "{:?}", words(&fizz));
         let run = Face::Running { product: "FUSE".into(), fraction: 0.5, left_s: 5.2 };
         assert!(has(&run, "FUSE") && has(&run, "6 S"), "{:?}", words(&run));
         assert!(has(&Face::Take { product: "FUSE".into() }, "TAKE"));

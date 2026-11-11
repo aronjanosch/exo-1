@@ -30,6 +30,8 @@ pub enum ToHost {
     Cut(CutAsk),
     /// The fabricator's button (#326): the host decides whether it starts.
     Fab(FabAsk),
+    /// The sniffer's tap, held while LMB is held (#333): the host decides whether a pocket opens.
+    Tap(TapAsk),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -54,6 +56,8 @@ pub enum ToClient {
     Dig(DigNews),
     /// The fabricator's screen and glow (#326), when its state changes.
     Fab(FabNews),
+    /// The fizz pockets' places and states (#333), when they change; every client computes its sniffer's signal from them.
+    Pockets(PocketNews),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -430,6 +434,29 @@ pub struct VeinNew {
 pub struct DigNews {
     pub veins: Vec<VeinNew>,
     pub cuts: Vec<[f64; 3]>,
+}
+
+/// The sniffer's tap (#333): the holder's feet (world metres), sent while LMB is held with the sniffer selected
+/// (when it starts and every quarter second), `Stop` when it is let go.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum TapAsk {
+    Hold { at: [f64; 3] },
+    Stop,
+}
+
+/// A fizz pocket as the host has it: its place in area metres (x east, y north), the jars left, the seconds an open
+/// vent has left in tenths (0: hidden), and the tap's progress in thousandths.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PocketNew {
+    pub at: [f64; 2],
+    pub jars: u8,
+    pub open_ds: u16,
+    pub tap: u16,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PocketNews {
+    pub pockets: Vec<PocketNew>,
 }
 
 /// The fabricator's physical button (#326).
@@ -1112,6 +1139,24 @@ mod tests {
             let back = match decode::<ToClient>(&encode(&ToClient::Dig(news.clone()))).expect("decodes") {
                 ToClient::Dig(d) => d,
                 _ => panic!("the dig message"),
+            };
+            assert_eq!(back, news);
+        }
+    }
+
+    #[test]
+    fn taps_and_the_pocket_news_travel_as_they_are() {
+        for ask in [TapAsk::Hold { at: [1.5, -2.0, 3.25] }, TapAsk::Stop] {
+            let back = match decode::<ToHost>(&encode(&ToHost::Tap(ask))).expect("decodes") {
+                ToHost::Tap(a) => a,
+                _ => panic!("the tap request"),
+            };
+            assert_eq!(back, ask);
+        }
+        for news in [PocketNews::default(), PocketNews { pockets: vec![PocketNew { at: [-12.5, 3.0], jars: 3, open_ds: 0, tap: 400 }, PocketNew { at: [4.0, 30.25], jars: 1, open_ds: 600, tap: 0 }] }] {
+            let back = match decode::<ToClient>(&encode(&ToClient::Pockets(news.clone()))).expect("decodes") {
+                ToClient::Pockets(n) => n,
+                _ => panic!("the pocket news"),
             };
             assert_eq!(back, news);
         }

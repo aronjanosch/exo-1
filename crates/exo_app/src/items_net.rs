@@ -103,6 +103,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                 items.note_using(slot, None);
                 items.release_locks(now, slot);
                 items.dig.asks.push((slot, item_core::wire::CutAsk::Stop));
+                items.dig.tap_asks.push((slot, item_core::wire::TapAsk::Stop));
                 if let Some(r) = repairs.as_mut() {
                     r.forget(slot);
                 }
@@ -125,6 +126,9 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                 }
                 if let Some(d) = items.dig.news.clone() {
                     items.net_out.push(NetOut::Dig { to: Some(slot), d });
+                }
+                if let Some(n) = items.dig.pockets.clone() {
+                    items.net_out.push(NetOut::Pockets { to: Some(slot), n });
                 }
                 if let Some(n) = items.fab.news {
                     items.net_out.push(NetOut::Fab { to: Some(slot), n });
@@ -149,6 +153,10 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     }
                     Some(ToHost::Cut(a)) => {
                         items.dig.asks.push((slot, a));
+                        true
+                    }
+                    Some(ToHost::Tap(a)) => {
+                        items.dig.tap_asks.push((slot, a));
                         true
                     }
                     Some(ToHost::Fab(a)) => {
@@ -199,6 +207,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     Some(ToClient::Reactor(r)) => items.reactor = Some(r),
                     Some(ToClient::Fire(f)) => items.fire = Some(f),
                     Some(ToClient::Dig(d)) => items.dig.news = Some(d),
+                    Some(ToClient::Pockets(n)) => items.dig.pockets = Some(n),
                     Some(ToClient::Fab(n)) => items.fab.news = Some(n),
                     Some(ToClient::RepairDone) | Some(ToClient::RepairRefused) => items.repair_done = true,
                     Some(ToClient::Status(s)) => items.public = s,
@@ -335,6 +344,12 @@ pub fn items_net_out(
             }
             NetOut::CutAsk(a) => {
                 net.send_reliable(None, &wire::encode(&ToHost::Cut(a)));
+            }
+            NetOut::TapAsk(a) => {
+                net.send_reliable(None, &wire::encode(&ToHost::Tap(a)));
+            }
+            NetOut::Pockets { to, n } => {
+                net.send_reliable(to, &wire::encode(&ToClient::Pockets(n)));
             }
             NetOut::FabAsk(a) => {
                 net.send_reliable(None, &wire::encode(&ToHost::Fab(a)));

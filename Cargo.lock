@@ -2573,6 +2573,7 @@ name = "dig_core"
 version = "0.1.0"
 dependencies = [
  "content_core",
+ "gameplay_core",
  "serde",
 ]
 

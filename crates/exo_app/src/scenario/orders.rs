@@ -73,7 +73,7 @@ fn says(w: &World, word: &str) -> bool {
 }
 
 fn stand_before(w: &mut World) {
-    let at = machine(w).world([0.3, 0.1, 1.5]);
+    let at = machine(w).world([0.0, 0.1, 1.5]);
     place_walker(w, at);
 }
 
@@ -309,7 +309,7 @@ pub(super) fn orders_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
     s.push(until("orders: one line ticked, one not", 3.0, |w| slate(w).1 == 1));
     s.push(Box::new(|w, _| {
         let m = machine(w);
-        let at = m.world([0.4, 1.0, 0.2]);
+        let at = m.world([0.3, 1.0, 0.2]);
         look_at(w, at);
         true
     }));

@@ -49,7 +49,7 @@ const BLINK_HZ: f64 = 3.0;
 
 /// On the storage room's north wall east of the doorway (x -0.8..0.8 from the room's centre), facing south into the room.
 /// Clear of the extinguisher cabinet (east wall, y 0.7..1.7) and of the ore tub's spot. TODO(initiator): the place.
-pub const AT: [f64; 2] = [2.15, 2.3];
+pub const AT: [f64; 2] = [1.95, 2.3];
 pub const TURN_DEG: f64 = 0.0;
 /// Width, height and depth (m).
 pub const SIZE: [f64; 3] = [1.4, 1.5, 0.4];

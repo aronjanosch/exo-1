@@ -1,5 +1,5 @@
 {
-  "_comment": "A blue canister of coolant, stacks of three on the corridor rack (#300). Using it at the coolant pump (look on it, LMB held 3 s) refills the tank by one canister's worth; the canister is used up. TODO(initiator): shape, mass, the hold's ring.",
+  "_comment": "A blue canister of coolant, stacks of three in Crate A (#331). Using it at the coolant tank on the engine room's east wall (look at it, LMB held 3 s) refills the tank by one canister's worth; the canister is used up, a full tank refuses. TODO(initiator): shape, mass, the hold's ring.",
   "id": "coolant_canister",
   "name": "Coolant canister",
   "code": "CLT",

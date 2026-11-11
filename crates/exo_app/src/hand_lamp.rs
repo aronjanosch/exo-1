@@ -27,6 +27,9 @@ const BEAM_COLOUR: Color = Color::srgb(1.0, 0.92, 0.75);
 /// Luminous power (lm): about 12 m of useful reach in a dark room.
 const BEAM_INTENSITY: f32 = 250_000.0;
 const BEAM_RANGE: f32 = 12.0;
+/// In a lit room the beam would be a blown-out white disc beside the ceiling lamps: it keeps this share of its power at the
+/// full lamp level (#328), and all of it in the dark. TODO(initiator): look.
+const LIT_BEAM_SHARE: f32 = 0.15;
 /// Cone half angles (rad), as Bevy takes them: outer 40 degrees, inner 25.
 const BEAM_OUTER: f32 = 40.0 * std::f32::consts::PI / 180.0;
 const BEAM_INNER: f32 = 25.0 * std::f32::consts::PI / 180.0;
@@ -122,8 +125,10 @@ fn beams(
     players: Query<&Player>,
     cam: Query<&WorldPose, (With<crate::view::MainCamera>, Without<LampBeam>)>,
     remotes: Query<(&RemoteWalker, &WorldPose), Without<LampBeam>>,
-    mut beams: Query<(Entity, &LampBeam, &mut WorldPose)>,
+    mut beams: Query<(Entity, &LampBeam, &mut WorldPose, &mut SpotLight)>,
+    interior: Option<Res<crate::interior::Interior>>,
 ) {
+    let share = interior.map_or(1.0, |i| 1.0 - (1.0 - LIT_BEAM_SHARE) * i.amount * i.level);
     let me = items.me();
     // (owner, position, rotation) of every lamp that is on.
     let mut want: Vec<(PlayerId, DVec3, DQuat, bool)> = Vec::new();
@@ -143,17 +148,18 @@ fn beams(
             want.push((rw.owner, pose.pos + pose.rot * FIGURE_OFFSET.as_dvec3(), pose.rot, REMOTE_SHADOWS));
         }
     }
-    for (e, b, mut pose) in &mut beams {
+    for (e, b, mut pose, mut spot) in &mut beams {
         match want.iter().find(|w| w.0 == b.owner) {
             Some(w) => {
                 pose.pos = w.1;
                 pose.rot = w.2;
+                spot.intensity = BEAM_INTENSITY * share;
             }
             None => commands.entity(e).despawn(),
         }
     }
     for (owner, pos, rot, shadows) in want {
-        if !beams.iter().any(|(_, b, _)| b.owner == owner) {
+        if !beams.iter().any(|(_, b, _, _)| b.owner == owner) {
             commands.spawn((
                 LampBeam { owner },
                 SpotLight { color: BEAM_COLOUR, intensity: BEAM_INTENSITY, range: BEAM_RANGE, outer_angle: BEAM_OUTER, inner_angle: BEAM_INNER, shadow_maps_enabled: shadows, ..default() },

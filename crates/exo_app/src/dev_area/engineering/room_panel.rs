@@ -1,6 +1,6 @@
 //! The engine room's wall panel (#313, the airlock panels' kind, #308): beside the door on the room's north wall.
 //! One field, LIGHTS ON / OFF: F on the panel and the cursor on it ask the host (`ReactorAsk::SetEngineLamps`, the host owns the
-//! switch, a client sees it in the news). Below it two read-only rows: CHAMBER HEAT and AIR. Dark with a dim NO POWER while
+//! switch, a client sees it in the news). Below it two read-only rows: HEAT and AIR. Dark with a dim NO POWER while
 //! JB-1 passes no power (or the ship's master is off); the host ignores the field then.
 use crate::dev_area::*;
 use crate::displays::{DisplayAction, Panels};

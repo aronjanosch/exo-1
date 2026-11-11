@@ -362,7 +362,7 @@ mod tests {
 /// The bar on the sniffer's back (the face toward the player in the first-person hold, `items::held_offset`): the box is
 /// 0.08 x 0.06 x 0.22, its back face lies at z +0.11 in the held item's frame. Width and height of the bar (m).
 const BAR_W: f32 = 0.07;
-const BAR_H: f32 = 0.014;
+const BAR_H: f32 = 0.024;
 const BAR_Z: f32 = 0.1125;
 /// Tick rate (per second) at the edge of the range and on the pocket; above `BUZZ_FROM` the ticks become a buzz.
 /// TODO(initiator): by ear.
@@ -412,6 +412,7 @@ struct VentVisuals {
     roots: Vec<Entity>,
     chimney_mesh: Option<Handle<Mesh>>,
     chimney_mat: Option<Handle<StandardMaterial>>,
+    puff_mesh: Option<Handle<Mesh>>,
     puff: f64,
 }
 
@@ -430,7 +431,7 @@ pub fn window_plugin(app: &mut App) {
     app.init_resource::<VentVisuals>().init_resource::<SniffSounds>();
     app.add_systems(Startup, (bar_assets, audio_setup));
     app.add_systems(Update, bar_sync.in_set(crate::phases::Frame::World));
-    app.add_systems(Update, vent_sync.in_set(crate::phases::Frame::Sync));
+    app.add_systems(Update, (vent_sync, puffs_step).chain().in_set(crate::phases::Frame::Sync));
     app.add_systems(Update, sniffer_sounds.in_set(crate::phases::Frame::Input));
 }
 
@@ -469,7 +470,7 @@ fn bar_sync(
             continue;
         }
         let Some(bar) = existing else {
-            let mat = materials.add(StandardMaterial { base_color: Color::BLACK, emissive: LinearRgba::rgb(0.4, 3.6, 0.8), unlit: true, ..default() });
+            let mat = materials.add(StandardMaterial { base_color: Color::BLACK, unlit: true, ..default() });
             commands.entity(e).with_children(|c| {
                 c.spawn((BarBack, bevy::light::NotShadowCaster, Mesh3d(assets.cube.clone()), MeshMaterial3d(assets.back.clone()), Transform::from_xyz(0.0, 0.0, 0.111).with_scale(Vec3::new(BAR_W + 0.006, BAR_H + 0.006, 0.002))));
                 c.spawn((BarFill { mat: mat.clone() }, bevy::light::NotShadowCaster, Mesh3d(assets.cube.clone()), MeshMaterial3d(mat), Transform::from_xyz(-BAR_W * 0.5, 0.0, BAR_Z).with_scale(Vec3::new(0.004, BAR_H, 0.003))));
@@ -484,8 +485,9 @@ fn bar_sync(
         // While the tap runs the bar pulses, faster the nearer the pocket is to opening.
         let pulse = if sniff.tapping && sniff.tap > 0.0 { 0.35 + 0.65 * (0.5 + 0.5 * (t * std::f32::consts::TAU * (2.0 + 6.0 * sniff.tap as f32)).sin()) } else { 1.0 };
         let c = bar_colour(sniff.signal);
+        // Unlit, like the hand lamp's lens: the bar shows its own colour in the dark too.
         if let Some(mut m) = materials.get_mut(&fill.mat) {
-            m.emissive = LinearRgba::rgb(c[0] * 4.0 * pulse, c[1] * 4.0 * pulse, c[2] * 4.0 * pulse);
+            m.base_color = Color::srgb(c[0] * pulse, c[1] * pulse, c[2] * pulse);
         }
     }
 }
@@ -497,7 +499,7 @@ fn vent_sync(
     planet: Res<PlanetRes>,
     area: Option<Res<DevArea>>,
     items: Res<Items>,
-    fx: Option<Res<crate::effects::FxAssets>>,
+    origin: Res<crate::origin::RenderOrigin>,
     mut vis: ResMut<VentVisuals>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -511,6 +513,7 @@ fn vent_sync(
             commands.entity(e).despawn();
         }
         vis.chimney_mesh = Some(meshes.add(Cuboid::new(1.0, 1.0, 1.0)));
+        vis.puff_mesh = Some(meshes.add(Sphere::new(0.5)));
         vis.chimney_mat = Some(materials.add(StandardMaterial { base_color: Color::srgb(0.08, 0.08, 0.09), perceptual_roughness: 0.9, ..default() }));
     }
     let (Some(news), Some(mesh), Some(mat)) = (items.dig.pockets.as_ref(), vis.chimney_mesh.clone(), vis.chimney_mat.clone()) else { return };
@@ -533,6 +536,8 @@ fn vent_sync(
             v.at = Some(p.at);
             let (g, up) = frame.ground(&planet, p.at[0], p.at[1], 0.0);
             wp.0 = g;
+            // `sync_world_pos` only places a new `WorldPos`; a vent that moves is placed here.
+            tr.translation = (g - origin.origin).as_vec3();
             tr.rotation = frame.rotation(up, 0.0).as_quat();
         }
         let want = open && v.at == Some(p.at);
@@ -556,14 +561,48 @@ fn vent_sync(
         }
     }
     vis.puff += time.delta_secs_f64();
-    if let Some(fx) = fx.as_deref()
+    if let Some(mesh) = vis.puff_mesh.clone()
         && vis.puff >= PUFF_EVERY_S
     {
         vis.puff = 0.0;
         let t = time.elapsed_secs_f64();
         for (k, (top, up)) in open_tops.iter().enumerate() {
             let seed = (t * 1000.0) as u64 ^ ((k as u64) << 24);
-            crate::effects::spawn_particle(&mut commands, fx, &mut materials, crate::effects::Kind::Steam, *top, crate::effects::jet(*up, seed, 1.3, 0.25), 0.0, PUFF_SIZE, PUFF_LIFE_S);
+            // The shared particle helper leaves a puff where it was born (its `WorldPos` is never synced after
+            // the spawn), so a rising puff is moved here.
+            let mat = materials.add(StandardMaterial { base_color: Color::srgba(0.95, 0.95, 0.97, 0.0), alpha_mode: AlphaMode::Blend, perceptual_roughness: 1.0, ..default() });
+            let vel = crate::effects::jet(*up, seed, 1.3, 0.25);
+            commands.spawn((Puff { pos: *top, vel, age: 0.0, mat: mat.clone() }, bevy::light::NotShadowCaster, Mesh3d(mesh.clone()), MeshMaterial3d(mat), Transform::from_scale(Vec3::splat(0.001))));
+        }
+    }
+}
+
+/// One white puff over a vent: its world place and velocity, and its age in seconds.
+#[derive(Component)]
+struct Puff {
+    pos: DVec3,
+    vel: DVec3,
+    age: f32,
+    mat: Handle<StandardMaterial>,
+}
+
+fn puffs_step(mut commands: Commands, time: Res<Time>, origin: Res<crate::origin::RenderOrigin>, mut mats: ResMut<Assets<StandardMaterial>>, mut puffs: Query<(Entity, &mut Puff, &mut Transform)>) {
+    use crate::effects::{fade_of, scale_of, Kind};
+    let dt = time.delta_secs();
+    for (e, mut p, mut tr) in &mut puffs {
+        p.age += dt;
+        if p.age >= PUFF_LIFE_S {
+            mats.remove(&p.mat);
+            commands.entity(e).despawn();
+            continue;
+        }
+        let v = p.vel;
+        p.pos += v * dt as f64;
+        let t = p.age / PUFF_LIFE_S;
+        tr.translation = (p.pos - origin.origin).as_vec3();
+        tr.scale = Vec3::splat(scale_of(Kind::Steam, PUFF_SIZE, t));
+        if let Some(mut m) = mats.get_mut(&p.mat) {
+            m.base_color.set_alpha(fade_of(Kind::Steam, t));
         }
     }
 }

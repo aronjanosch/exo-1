@@ -14,6 +14,10 @@
 //!   others. Letting go sends the last pose and velocity (`Release`); the host's physics takes
 //!   over, and the client keeps the crate where it let go until the host's word (`Held` with no
 //!   holder, at host time `t`) is past the playout time (`Handback`).
+//! - A copy is solid where the host's crate is: a kinematic collider (`ViewCollider`, a separate entity
+//!   so the crate's own physics parts are never touched) follows the posed copy while it is near the
+//!   walker and outside. A crate this process carries has none (it is a body itself, and the walker
+//!   ignores the one in its hands).
 //! - A holder who leaves frees the crate.
 //!
 //! Not covered: crates in a client's own cabin (the host cannot simulate another ship's frame:
@@ -25,6 +29,7 @@ use crate::env::PlanetRes;
 use crate::grab::Grab;
 use crate::items::{Items, LooseItem, Role};
 use crate::items_net::{body_frame, LooseView, RemoteBodies};
+use avian3d::prelude::*;
 use crate::net_live::Net;
 use crate::ore_tub::Tub;
 use crate::ship::{RemoteShip, Ship};
@@ -49,6 +54,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, crate_net_in.run_if(resource_exists::<Net>).after(crate::items_net::items_net_in).in_set(Fx::Input));
     app.add_systems(FixedUpdate, crate_holds.run_if(resource_exists::<Net>).before(crate::grab::grab_step).in_set(Fx::Cargo));
     app.add_systems(FixedUpdate, crate_views.run_if(resource_exists::<Net>).in_set(Fx::Cargo));
+    app.add_systems(FixedUpdate, view_colliders.run_if(resource_exists::<Net>).after(crate_views).after(crate_holds).after(crate::grab::grab_step).in_set(Fx::Cargo));
     app.add_systems(FixedLast, crate_net_out.run_if(resource_exists::<Net>).after(crate::avian_crates::avian_post).before(crate::net_live::net_channels));
 }
 
@@ -470,6 +476,58 @@ pub fn crate_views(
         if *vis != want {
             *vis = want;
         }
+    }
+}
+
+/// The solid stand-in of a crate copy (a picture otherwise): a kinematic body in world space that
+/// follows the posed copy. Its own entity, so the crate's dynamic parts (when this process
+/// carries it) never meet it.
+#[derive(Component)]
+pub struct ViewCollider(pub Entity);
+
+/// Within this distance of the walker a copy gets its collider (m), as the host wakes crates (`avian_crates`).
+const VIEW_SOLID_RADIUS: f64 = 40.0;
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn view_colliders(
+    mut commands: Commands,
+    grab: Res<Grab>,
+    players: Query<&crate::walker::Player>,
+    ships: Query<(Entity, &Position, &Rotation), With<Ship>>,
+    floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<crate::walker::CabinFloor>>,
+    views: Query<(Entity, &Crate, &LooseView), (With<CrateId>, Without<LooseItem>)>,
+    mut colliders: Query<(Entity, &ViewCollider, &mut Position, &mut Rotation, &mut LinearVelocity), (With<ViewCollider>, Without<Crate>, Without<Ship>, Without<crate::walker::CabinFloor>)>,
+) {
+    let Ok(pl) = players.single() else { return };
+    let Some((ship_e, sp, sr)) = ships.iter().next() else { return };
+    let wf = if pl.ship.is_some() { crate::walker::cabin_frame(ship_e, (sp, sr), &floors) } else { walker_core::Frame::IDENTITY };
+    let walker = pl.world_pos(wf);
+    let mut have: HashSet<Entity> = HashSet::new();
+    for (e, vc, mut pos, mut rot, mut vel) in &mut colliders {
+        let live = views.get(vc.0).ok().filter(|(ce, c, v)| v.placed && c.ship.is_none() && grab.held.is_none_or(|h| h.crate_e != *ce) && c.body.pos.distance(walker) < VIEW_SOLID_RADIUS);
+        match live {
+            Some((_, c, _)) => {
+                have.insert(vc.0);
+                pos.0 = c.body.pos;
+                rot.0 = c.body.rot();
+                vel.0 = c.body.vel;
+            }
+            None => commands.entity(e).despawn(),
+        }
+    }
+    for (e, c, v) in &views {
+        if have.contains(&e) || !v.placed || c.ship.is_some() || grab.held.is_some_and(|h| h.crate_e == e) || c.body.pos.distance(walker) >= VIEW_SOLID_RADIUS {
+            continue;
+        }
+        commands.spawn((
+            ViewCollider(e),
+            RigidBody::Kinematic,
+            c.collider(),
+            Position(c.body.pos),
+            Rotation(c.body.rot()),
+            LinearVelocity(c.body.vel),
+            CollisionLayers::new(crate::Layer::Crate, [crate::Layer::World, crate::Layer::Ship, crate::Layer::Crate]),
+        ));
     }
 }
 

@@ -342,3 +342,35 @@ fn a_holder_who_leaves_lets_the_crate_go() {
     p.host.world_mut().resource_mut::<CrateNet>().left_peers.push(2);
     p.until(30.0, "the crate is free and the host's physics has it again", |p| host_holder(p, small).is_none() && crate_of(&mut p.host, small).is_some_and(|c| !c.remote_held && !c.view));
 }
+
+#[test]
+fn a_client_cannot_walk_through_a_crate_copy() {
+    let _g = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let (mut p, _) = session(false, false);
+    let medium = p.host.world().resource::<Crates>().0.sizes.iter().position(|s| s.name == "medium").unwrap();
+    let id = crates(&mut p.host).into_iter().find(|c| c.size == medium).unwrap().id;
+    p.until(30.0, "the client shows the medium crate as a copy", |p| crate_of(&mut p.client, id).is_some_and(|c| c.view));
+    let at = crate_of(&mut p.client, id).unwrap().pos;
+    let (_, up, fwd) = walker(&mut p.client);
+    // Walk along the ground from the side, straight at the crate's middle, 2.5 m away.
+    let dir = fwd.cross(up).normalize();
+    {
+        let w = p.client.world_mut();
+        let mut pl = w.query::<&mut Player>().single_mut(w).unwrap();
+        pl.w.pos = at - dir * 2.5 - up * 0.2;
+        pl.w.forward = dir;
+        pl.w.vel = DVec3::ZERO;
+    }
+    p.run_secs(0.5);
+    p.client.world_mut().resource_mut::<Controls>().held.insert(KeyCode::KeyW);
+    let t0 = Instant::now();
+    let mut furthest = f64::MIN;
+    while t0.elapsed().as_secs_f64() < 4.0 {
+        p.step();
+        furthest = furthest.max((walker(&mut p.client).0 - at).dot(dir));
+    }
+    p.client.world_mut().resource_mut::<Controls>().held.remove(&KeyCode::KeyW);
+    assert!(furthest < 0.0, "the walker stopped at the crate copy; it got {furthest:.2} m past the crate's middle");
+    let reached = (walker(&mut p.client).0 - at).dot(dir);
+    assert!(reached > -2.4, "the walker did walk towards it ({reached:.2} m from the middle)");
+}

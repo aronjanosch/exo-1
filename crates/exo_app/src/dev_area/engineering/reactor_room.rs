@@ -478,6 +478,27 @@ struct Glow {
     first: bool,
 }
 
+/// A canister's life, in percent, at or under which its slot ring turns amber and pulses. TODO(initiator): value.
+pub const SLOT_LOW_PCT: f64 = 25.0;
+
+/// Pure: a slot ring's colour (linear rgb) and level (0..1) at time `t`: steady white above `SLOT_LOW_PCT`,
+/// a pulsing amber at or under it, red when the canister is spent, dark for an empty slot.
+/// A life that is not a number reads as spent.
+pub fn slot_lamp(slot: &item_core::wire::CanisterSlot, t: f32) -> ([f32; 3], f32) {
+    if slot.canister.is_none() {
+        return ([0.0; 3], 0.0);
+    }
+    if !(slot.life > 0.0) {
+        return ([1.0, 0.05, 0.05], 1.0);
+    }
+    if slot.life <= SLOT_LOW_PCT {
+        // About 1.5 pulses a second, never fully dark so the ring stays readable.
+        let pulse = 0.5 + 0.5 * (t * std::f32::consts::TAU * 1.5).sin();
+        return ([1.0, 0.6, 0.05], 0.25 + 0.75 * pulse);
+    }
+    ([1.0, 1.0, 1.0], 1.0)
+}
+
 /// Pure: the core's glow target from the news: dark with the power off or the core out, else idle up to full with the output.
 pub fn glow_target(n: &ReactorNews, max_output_kw: f64) -> f32 {
     if n.ejected || !n.power_on {
@@ -534,9 +555,9 @@ fn drive_visuals(
         }
         for (i, name) in ["lamp_slot_1", "lamp_slot_2"].into_iter().enumerate() {
             let Some(mut m) = named.0.get(name).and_then(|h| mats.get_mut(h)) else { continue };
-            let on = n.canisters[i].canister.is_some() && n.canisters[i].life > 0.0;
-            m.emissive = if on { LinearRgba::rgb(0.1, 1.0, 0.25) * 3.0 } else { LinearRgba::BLACK };
-            m.base_color = if on { Color::srgb(0.1, 0.9, 0.25) } else { Color::srgb(0.02, 0.04, 0.05) };
+            let (colour, level) = slot_lamp(&n.canisters[i], time.elapsed_secs());
+            m.emissive = LinearRgba::rgb(colour[0], colour[1], colour[2]) * 3.0 * level;
+            m.base_color = if level > 0.0 { Color::srgb(colour[0], colour[1], colour[2]) } else { Color::srgb(0.02, 0.04, 0.05) };
         }
         // The prime column (#319): the segments light one after another, bottom to top, as the trap charges.
         for (i, name) in ["lamp_prime_1", "lamp_prime_2", "lamp_prime_3", "lamp_prime_4", "lamp_prime_5"].into_iter().enumerate() {
@@ -588,6 +609,21 @@ mod tests {
         let look = (r.part_at(1, &m) - eye).normalize();
         assert_eq!(r.pick(&m, eye, look, 2.5), part_index(BUTTON_SCRAM));
         assert_eq!(r.pick(&m, eye, look, 0.5), None, "out of reach");
+    }
+
+    #[test]
+    fn the_slot_ring_shows_the_canister_life() {
+        use item_core::wire::{CanisterKind, CanisterSlot};
+        let slot = |canister, life| CanisterSlot { canister, life };
+        let full = Some(CanisterKind::Standard);
+        assert_eq!(slot_lamp(&slot(None, 80.0), 0.0).1, 0.0, "empty is dark");
+        assert_eq!(slot_lamp(&slot(full, 80.0), 3.3), ([1.0; 3], 1.0), "steady white");
+        let (amber, _) = slot_lamp(&slot(full, 25.0), 0.1);
+        assert!(amber[0] > 0.9 && amber[2] < 0.2 && amber[1] > 0.4 && amber[1] < 0.8);
+        let levels: Vec<f32> = (0..30).map(|i| slot_lamp(&slot(full, 10.0), i as f32 * 0.03).1).collect();
+        assert!(levels.iter().cloned().fold(f32::MAX, f32::min) < levels.iter().cloned().fold(0.0, f32::max) - 0.3, "it pulses");
+        assert_eq!(slot_lamp(&slot(full, 0.0), 0.0), ([1.0, 0.05, 0.05], 1.0), "spent is red");
+        assert_eq!(slot_lamp(&slot(full, f64::NAN), 0.0).0[0], 1.0, "NaN reads as spent");
     }
 
     #[test]

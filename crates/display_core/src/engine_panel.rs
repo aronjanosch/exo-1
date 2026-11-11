@@ -14,9 +14,9 @@ pub const H: f64 = 320.0;
 pub const LIGHTS: &str = "lights";
 
 /// Design heights of the three bands of the page (they add up to the 640 of the texture).
-const TITLE_H: f64 = 112.0;
-const FIELD_H: f64 = 224.0;
-const ROWS_H: f64 = 304.0;
+const TITLE_H: f64 = 96.0;
+const FIELD_H: f64 = 208.0;
+const ROWS_H: f64 = 336.0;
 
 /// The air's share (0..1) below which the word is THIN (`monitor::o2_tone`'s warn line) and below which it is NONE.
 /// TODO(initiator): the lines.
@@ -127,15 +127,15 @@ fn band(h: f64, mut prims: Vec<Prim>, mut shapes: Vec<Shape>, action: Option<&st
 fn title() -> Item {
     // The top edge of the frame.
     let top = vec![r::rect(0.0, 0.0, 400.0, 2.0, LINE2)];
-    band(TITLE_H, top, vec![text(16.0, 30.0, 368.0, 56.0, "ENGINE ROOM", 46.0, TextFace::DisplayBold, WHITE, 0.1, true)], None)
+    band(TITLE_H, top, vec![text(16.0, 22.0, 368.0, 56.0, "ENGINE ROOM", 48.0, TextFace::DisplayBold, WHITE, 0.1, true)], None)
 }
 
 fn field(on: bool) -> Item {
     let (word, rgb, edge) = if on { ("ON", WHITE, BLUE) } else { ("OFF", FG2, LINE2) };
     let prims = vec![r::rect(24.0, 8.0, 352.0, FIELD_H - 24.0, edge), r::rect(30.0, 14.0, 340.0, FIELD_H - 36.0, PLATE)];
     let shapes = vec![
-        text(24.0, 28.0, 352.0, 64.0, "LIGHTS", 60.0, TextFace::DisplayBold, FG2, 0.1, true),
-        text(24.0, 96.0, 352.0, 96.0, word, 96.0, TextFace::DisplayBold, rgb, 0.06, true),
+        text(24.0, 24.0, 352.0, 64.0, "LIGHTS", 64.0, TextFace::DisplayBold, FG2, 0.1, true),
+        text(24.0, 92.0, 352.0, 96.0, word, 96.0, TextFace::DisplayBold, rgb, 0.06, true),
     ];
     band(FIELD_H, prims, shapes, Some(LIGHTS))
 }
@@ -143,12 +143,12 @@ fn field(on: bool) -> Item {
 /// One read-only row: the label, the word in its colour and a short bar with its fill.
 fn read_row(y: f64, label: &str, word: &str, rgb: [u8; 3], fill: f64, prims: &mut Vec<Prim>, shapes: &mut Vec<Shape>) {
     let fill = if fill.is_finite() { fill.clamp(0.0, 1.0) } else { 0.0 };
-    shapes.push(text(40.0, y + 8.0, 320.0, 30.0, label, 28.0, TextFace::Display, FG2, 0.14, false));
-    shapes.push(text(40.0, y + 40.0, 320.0, 64.0, word, 56.0, TextFace::DisplayBold, rgb, 0.06, false));
-    prims.push(r::rect(40.0, y + 112.0, 320.0, 20.0, LINE2));
-    prims.push(r::rect(42.0, y + 114.0, 316.0, 16.0, TRACK));
+    shapes.push(text(32.0, y + 6.0, 336.0, 46.0, label, 40.0, TextFace::Display, FG2, 0.04, false));
+    shapes.push(text(32.0, y + 54.0, 336.0, 72.0, word, 68.0, TextFace::DisplayBold, rgb, 0.04, false));
+    prims.push(r::rect(32.0, y + 130.0, 336.0, 26.0, LINE2));
+    prims.push(r::rect(34.0, y + 132.0, 332.0, 22.0, TRACK));
     if fill > 0.0 {
-        prims.push(r::rect(42.0, y + 114.0, 316.0 * fill, 16.0, rgb));
+        prims.push(r::rect(34.0, y + 132.0, 332.0 * fill, 22.0, rgb));
     }
 }
 
@@ -156,7 +156,7 @@ fn rows(heat: Heat, heat_fill: f64, air: Air, air_fill: f64) -> Item {
     let mut prims = vec![r::rect(0.0, ROWS_H - 2.0, 400.0, 2.0, LINE2)];
     let mut shapes = Vec::new();
     read_row(0.0, "CHAMBER HEAT", heat.word(), heat.rgb(), heat_fill, &mut prims, &mut shapes);
-    read_row(150.0, "AIR", air.word(), air.rgb(), air_fill, &mut prims, &mut shapes);
+    read_row(168.0, "AIR", air.word(), air.rgb(), air_fill, &mut prims, &mut shapes);
     band(ROWS_H, prims, shapes, None)
 }
 

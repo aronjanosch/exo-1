@@ -1139,3 +1139,37 @@ fn spent_fuel_drops_the_ship_to_the_battery_and_a_fresh_canister_brings_it_back(
     assert!(r.reactor().output_kw() > 500.0, "output back: {}", r.reactor().output_kw());
     assert!(r.grid().factor(Group::Lights) > 0.9, "lights back");
 }
+
+/// #313: the room panel's LIGHTS field flips the engine room's lamps by hand; a dead JB-1 ignores it.
+#[test]
+fn the_panel_switch_flips_the_engine_lamps_and_a_dead_jb1_ignores_it() {
+    let mut r = room();
+    settle(&mut r);
+    assert!(!r.engine_lamps_off(), "the lamps start on");
+    assert!(r.set_engine_lamps(false));
+    assert!(r.engine_lamps_off());
+    run(&mut r, 1.0, Input::auto());
+    assert!(r.engine_lamps_off(), "it stays until pressed again");
+    assert!(r.set_engine_lamps(true));
+    assert!(!r.engine_lamps_off());
+    // JB-1 dead: nothing flips, whichever way it is asked.
+    r.junction_mut(0).condition_mut().set_value(0.0);
+    run(&mut r, 1.0, Input::auto());
+    assert!(!r.junction_passes(0));
+    assert!(!r.set_engine_lamps(false) && !r.engine_lamps_off());
+    // The hand switch, once off, stays in the state it had when the box died.
+    let mut off = room();
+    settle(&mut off);
+    off.set_engine_lamps(false);
+    off.junction_mut(0).condition_mut().set_value(0.0);
+    assert!(!off.set_engine_lamps(true) && off.engine_lamps_off());
+}
+
+#[test]
+fn the_lamp_switch_is_saved_with_the_room() {
+    let shipped = Tuning::shipped();
+    let mut r = EngineRoom::from_tuning(&shipped, 11);
+    r.set_engine_lamps(false);
+    let back = EngineRoom::from_save(&shipped, &through_json(&r.to_save()));
+    assert!(back.engine_lamps_off());
+}

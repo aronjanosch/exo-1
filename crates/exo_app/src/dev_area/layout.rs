@@ -132,6 +132,9 @@ pub const AIRLOCK_PANEL_AT: [[f64; 2]; 3] = [[11.2, -8.7], [12.0, -8.4], [9.9, -
 pub const AIRLOCK_SCREEN_SIZE: [f64; 2] = [0.20, 0.32];
 pub const AIRLOCK_PANEL_CENTRE: f64 = 1.4;
 pub const AIRLOCK_PANEL_MODEL: &str = "ship/airlock_wall_panel.glb";
+/// The engine room's panel (#313): on the room's north wall inside (face y -11.0), east of the door whose frame ends at x -13.0,
+/// about 0.6 m from it; the same size and model frame as the airlock's. TODO(initiator): the spot (start value).
+pub const ENGINE_PANEL_AT: [f64; 2] = [-12.4, -11.0];
 
 pub struct Mount {
     pub id: PanelId,
@@ -150,6 +153,8 @@ pub const SCREENS: &[Mount] = &[
     Mount { id: hull_panels::AIRLOCK_IN_ID, name: hull_panels::AIRLOCK_IN_NAME, at: AIRLOCK_PANEL_AT[0], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 0.0 },
     Mount { id: hull_panels::AIRLOCK_OUT_ID, name: hull_panels::AIRLOCK_OUT_NAME, at: AIRLOCK_PANEL_AT[1], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 180.0 },
     Mount { id: hull_panels::AIRLOCK_SHIP_ID, name: hull_panels::AIRLOCK_SHIP_NAME, at: AIRLOCK_PANEL_AT[2], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 270.0 },
+    // The engine room's panel (#313), on the north wall beside the door, facing south into the room.
+    Mount { id: crate::dev_area::engineering::room_panel::ENGINE_PANEL_ID, name: crate::dev_area::engineering::room_panel::ENGINE_PANEL_NAME, at: ENGINE_PANEL_AT, lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 0.0 },
 ];
 
 pub const DOOR: &str = "engine_door";
@@ -321,7 +326,7 @@ fn spawn_box(commands: &mut Commands, frame: &Frame, planet: &PlanetRes, id: Str
 }
 
 fn is_airlock_panel(id: &PanelId) -> bool {
-    *id == hull_panels::AIRLOCK_IN_ID || *id == hull_panels::AIRLOCK_OUT_ID || *id == hull_panels::AIRLOCK_SHIP_ID
+    *id == hull_panels::AIRLOCK_IN_ID || *id == hull_panels::AIRLOCK_OUT_ID || *id == hull_panels::AIRLOCK_SHIP_ID || *id == crate::dev_area::engineering::room_panel::ENGINE_PANEL_ID
 }
 
 fn spawn_screen(commands: &mut Commands, frame: &Frame, planet: &PlanetRes, m: &Mount, at: [f64; 2]) -> Entity {

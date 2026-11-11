@@ -200,6 +200,8 @@ pub enum ReactorAsk {
     /// The airlock's panels (r40, #309): PUSH runs the whole cycle to the other side, F on the inner door
     /// opens or shuts it while the airlock rests inside. The host ignores what the interlock refuses.
     Airlock(AirlockAsk),
+    /// The engine room panel's LIGHTS field (#313): `true` lamps on, `false` off by hand. The host refuses it while JB-1 passes no power.
+    SetEngineLamps(bool),
     /// The dev faults screen's AMBUSH switch (r41): true starts an enemy encounter, false ends it.
     Ambush(bool),
     /// The captain's SEAL on CP-01 (r41): shuts the airlock's inner door when it is open and no cycle
@@ -582,6 +584,8 @@ pub struct ReactorNews {
     /// The lights group's factor, 0..1 (delivered over demand, capped by its limit): the room
     /// lights' voltage (`reactor_core::LightState`). Below 0.1 the emergency lamps are on.
     pub lights_factor: f64,
+    /// The engine room's lamps are switched off by hand at the room panel (#313): plain dark, no emergency glow.
+    pub engine_lamps_off: bool,
     pub aux_on: bool,
     pub aux_life_support: bool,
     pub aux_lights: bool,
@@ -939,6 +943,7 @@ mod tests {
             aux_life_support: false,
             aux_lights: true,
             lights_factor: 0.6,
+            engine_lamps_off: true,
             aux_boost_kw: 250.0,
             power_on: true,
             manual: true,
@@ -1061,6 +1066,7 @@ mod tests {
             ReactorAsk::Ambush(false),
             ReactorAsk::Airlock(AirlockAsk::ToggleInner),
             ReactorAsk::SealAirlock,
+            ReactorAsk::SetEngineLamps(false),
         ];
         for pull in [0u8, 1] {
             assert_eq!(decode::<ToHost>(&encode(&ToHost::Pull(pull))), Some(ToHost::Pull(pull)));

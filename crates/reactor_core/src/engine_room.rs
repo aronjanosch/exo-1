@@ -598,6 +598,9 @@ pub struct RoomSave {
     pub jump: JumpSave,
     pub hull: Hull,
     pub grid: GridSave,
+    /// The engine room's lamps are off by hand (#313). Absent in older saves: on.
+    #[serde(default)]
+    pub lamps_off: bool,
 }
 
 /// The engine room's air as a save holds it (the glue's `EngineAir` converts to and from it): each
@@ -700,6 +703,9 @@ pub struct EngineRoom {
     stand: Stand,
     /// Seconds the output has stayed at the demand during the run-up.
     reach_held: f64,
+    /// The engine room's lamps are switched off by hand at the room panel (#313): plain dark, like the unpowered room but
+    /// without the emergency glow. The host owns it; saved with the room.
+    lamps_off: bool,
     /// Normal wear on (`set_wear`): off, running wears nothing (the dev area's start, the initiator
     /// 2026-10-15); heat, blasts, hits and overvoltage take condition either way.
     wears: bool,
@@ -759,6 +765,7 @@ impl EngineRoom {
             start: ReactorStart::warm(t.startup),
             stand: Stand::warm(),
             reach_held: 0.0,
+            lamps_off: false,
         }
     }
 
@@ -775,6 +782,7 @@ impl EngineRoom {
             jump: self.jump.to_save(),
             hull: self.hull,
             grid: self.grid.to_save(),
+            lamps_off: self.lamps_off,
         }
     }
 
@@ -795,6 +803,7 @@ impl EngineRoom {
         r.jump = JumpDrive::from_save(t.jump, &s.jump);
         r.hull = s.hull;
         r.grid.apply_save(&s.grid);
+        r.lamps_off = s.lamps_off;
         r
     }
 
@@ -974,6 +983,21 @@ impl EngineRoom {
     /// The room lights and the canister box ask this; the reactor's own screens and the airlock cycle do not.
     pub fn junction_passes(&self, i: usize) -> bool {
         self.junctions[i].condition.functioning() && Group::ALL.iter().any(|g| g.junction() == i && self.grid.breaker(*g))
+    }
+
+    /// The room panel's LIGHTS field (#313): switches the engine room's lamps off (`on` false) or on by hand. Refused (false,
+    /// nothing changed) while JB-1 passes no power: the panel is dark then and the lamps are the grid's.
+    pub fn set_engine_lamps(&mut self, on: bool) -> bool {
+        if !self.junction_passes(0) {
+            return false;
+        }
+        self.lamps_off = !on;
+        true
+    }
+
+    /// The engine room's lamps were switched off by hand (`set_engine_lamps`).
+    pub fn engine_lamps_off(&self) -> bool {
+        self.lamps_off
     }
 
     /// Whether the box `g` hangs on passes power (a broken box cuts only its own groups).

@@ -99,6 +99,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 | `blast` | The implosion blast reaches a walker two metres off and not one at 25 m. |
 | `reactor_end` | The reactor's bad end (#325): the dev menu makes the core critical and the countdown runs; thrown out, it implodes outside and hurts a walker near it, spares one beyond the safe distance, no blast and no hull damage; left aboard, it ends the game. |
 | `faults` | Faults (#328): JB-2 breaks, the corridor and the equipment room go dark (engine room and bridge not), the canister boxes lose power; a repair try is refused until a fuse is fitted (one fuse used up, a fuse on a sound box comes back), then the repair brings the lights back; the director on a short wait opens exactly one incident at a time. |
+| `hand_lamp` | The hand lamp (#329): given to the walker, LMB through `Controls` switches it on (state and a spot light for the walker, JB-2 blown), another slot selected puts it away (off, no light), selecting it again leaves it off until the next click; a remote player whose status says lamp on gets a light too. A picture in a window run: the dark corridor, the lamp on, pointed at the blown box. |
 | `fire` | Fires in the engine room, sprayed out with the extinguisher. |
 | `fire_grid` | The cell model of the engine-room fire, switched on (fire model Grid), catches the corridor. |
 | `extinguisher` | The extinguisher's supply: wear, empty, refill at the corridor rack. |

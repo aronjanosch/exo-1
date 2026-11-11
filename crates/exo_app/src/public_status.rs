@@ -47,7 +47,7 @@ fn treat_out(mut items: ResMut<Items>, hold: Res<UseHold>, mut st: ResMut<TreatS
 
 /// exist with the dev area only.
 #[allow(clippy::too_many_arguments)]
-fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>, sprays: Option<Res<Sprays>>, repairs: Res<RepairSessions>, rescue: Res<Rescuers>, mut treat: ResMut<TreatState>, masks: Option<Res<crate::dev_area::gear::MaskWorn>>, suits: Option<Res<crate::dev_area::gear::SuitWorn>>) {
+fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>, sprays: Option<Res<Sprays>>, repairs: Res<RepairSessions>, rescue: Res<Rescuers>, mut treat: ResMut<TreatState>, masks: Option<Res<crate::dev_area::gear::MaskWorn>>, suits: Option<Res<crate::dev_area::gear::SuitWorn>>, lamps: Res<crate::hand_lamp::LampOn>) {
     if items.role != Role::Host {
         return;
     }
@@ -91,7 +91,7 @@ fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>
             // The injuries the others see (the medic view): the same numbers as the owner's vitals.
             let v = crate::health::vitals_of(&st.tuning, b);
             let hurt = Injuries::from_shares(v.health, v.burn_level, v.radiation, v.oxygen.map_or(0.0, |air| 1.0 - air));
-            (*id, PublicStatus { burning: b.health.burning(), down, unconscious, doing, hurt })
+            (*id, PublicStatus { burning: b.health.burning(), down, unconscious, doing, hurt, lamp: lamps.0.contains_key(id) })
         })
         .collect();
     if now != items.public {

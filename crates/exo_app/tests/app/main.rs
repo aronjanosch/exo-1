@@ -13,6 +13,7 @@ mod scenario_reactor_room;
 mod scenario_blast;
 mod scenario_reactor_end;
 mod scenario_faults;
+mod scenario_hand_lamp;
 mod scenario_container;
 mod scenario_equipment;
 mod scenario_crate_budget;

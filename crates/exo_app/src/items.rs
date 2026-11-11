@@ -145,6 +145,8 @@ pub struct Items {
     pub using: BTreeMap<PlayerId, BotStation>,
     /// Host: the masks put on or taken off (the player, the slot the mask is in), from the uses.
     pub mask_uses: Vec<(PlayerId, usize)>,
+    /// Host: the hand lamps switched on or off (the player, the slot the lamp is in), from the uses (#329).
+    pub lamp_uses: Vec<(PlayerId, usize)>,
     pub dig: DigLink,
     pub fab: FabLink,
 }
@@ -176,7 +178,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, canister_loads: Vec::new(), fuse_fits: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new(), refilling: BTreeSet::new(), using: BTreeMap::new(), mask_uses: Vec::new(), game_over_seen: false, dig: DigLink::default(), fab: FabLink::default() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, canister_loads: Vec::new(), fuse_fits: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new(), refilling: BTreeSet::new(), using: BTreeMap::new(), mask_uses: Vec::new(), lamp_uses: Vec::new(), game_over_seen: false, dig: DigLink::default(), fab: FabLink::default() }
     }
 
     pub fn me(&self) -> PlayerId {
@@ -490,6 +492,11 @@ impl Items {
                         && let Some(slot) = used_slot
                     {
                         self.mask_uses.push((*player, slot));
+                    }
+                    if effect == crate::hand_lamp::USE
+                        && let Some(slot) = used_slot
+                    {
+                        self.lamp_uses.push((*player, slot));
                     }
                     if effect == crate::dev_area::engineering::fuses::FIT
                         && let Some(into) = load_into
@@ -822,7 +829,13 @@ pub(crate) fn hide_items(items: Res<Items>, mut q: Query<(&LooseItem, &mut Visib
 }
 
 #[derive(Component)]
-struct HeldModel(Option<String>);
+pub(crate) struct HeldModel(Option<String>);
+
+impl HeldModel {
+    pub(crate) fn kind(&self) -> Option<&str> {
+        self.0.as_deref()
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 fn held_item(
@@ -841,7 +854,8 @@ fn held_item(
     let want = if seated { None } else { items.in_hand(carrying).map(|s| s.item.kind.to_string()) };
     let Ok(c) = cam.single() else { return };
     let Some((e, mut m, mut pose, mut vis)) = held.iter_mut().next() else {
-        commands.spawn((HeldModel(None), crate::origin::WorldPose::default(), Transform::default(), Visibility::Hidden));
+        // No shadow of its own: the hand lamp's beam starts beside it (#329).
+        commands.spawn((HeldModel(None), bevy::light::NotShadowCaster, crate::origin::WorldPose::default(), Transform::default(), Visibility::Hidden));
         return;
     };
     if m.0 != want {

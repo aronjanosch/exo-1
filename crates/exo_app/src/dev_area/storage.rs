@@ -69,6 +69,8 @@ pub fn contents(rack: RackId, defs: &ItemDefs) -> Container {
             put(&mut c, defs, "oxy", 2);
             // Two spare fuses for the first blown junction boxes (#328).
             put(&mut c, defs, "fuse", 2);
+            // A hand lamp for the dark (#329).
+            put(&mut c, defs, "hand_lamp", 1);
         }
         _ => {}
     }
@@ -140,6 +142,7 @@ mod tests {
         assert_eq!(n(CRATE_A, "antimatter_canister"), 3);
         assert_eq!(n(CRATE_A, "bandage"), 4);
         assert_eq!(n(CRATE_A, "oxy"), 2);
+        assert_eq!(n(CRATE_A, "hand_lamp"), 1);
         for rack in [CRATE_B, CRATE_C] {
             assert_eq!(contents(rack, &d).count(&item_core::container::ItemKind::new("oxy")), 0, "B and C start empty");
         }

@@ -80,6 +80,8 @@ pub struct PublicStatus {
     pub unconscious: bool,
     pub doing: Doing,
     pub hurt: Injuries,
+    /// The hand lamp is on (#329): the others see the beam and the lit lens.
+    pub lamp: bool,
 }
 
 /// A player's injuries as the others see them: the health and the injuries that treatments
@@ -1153,13 +1155,14 @@ mod tests {
     #[test]
     fn public_status_travels_as_it_is() {
         let status = vec![
-            (1, PublicStatus { burning: true, down: false, unconscious: false, doing: Doing::Treating(2), hurt: Injuries { health: 35, burn_level: 2, radiation: 40, oxygen_low: 0 } }),
-            (2, PublicStatus { burning: false, down: true, unconscious: false, doing: Doing::Nothing, hurt: Injuries::default() }),
-            (3, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Repairing(RepairDevice::CoolantPump), hurt: Injuries::default() }),
-            (4, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Spraying, hurt: Injuries::default() }),
-            (5, PublicStatus { burning: false, down: false, unconscious: true, doing: Doing::Nothing, hurt: Injuries::from_shares(0.0, 0, 0.0, 0.5) }),
-            (6, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Refilling, hurt: Injuries::default() }),
-            (7, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Suited, hurt: Injuries::default() }),
+            (1, PublicStatus { burning: true, down: false, unconscious: false, doing: Doing::Treating(2), hurt: Injuries { health: 35, burn_level: 2, radiation: 40, oxygen_low: 0 }, lamp: false }),
+            (2, PublicStatus { burning: false, down: true, unconscious: false, doing: Doing::Nothing, hurt: Injuries::default(), lamp: false }),
+            (3, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Repairing(RepairDevice::CoolantPump), hurt: Injuries::default(), lamp: false }),
+            (4, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Spraying, hurt: Injuries::default(), lamp: false }),
+            (5, PublicStatus { burning: false, down: false, unconscious: true, doing: Doing::Nothing, hurt: Injuries::from_shares(0.0, 0, 0.0, 0.5), lamp: false }),
+            (6, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Refilling, hurt: Injuries::default(), lamp: false }),
+            (7, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Suited, hurt: Injuries::default(), lamp: false }),
+            (8, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Nothing, hurt: Injuries::default(), lamp: true }),
         ];
         let back = match decode::<ToClient>(&encode(&ToClient::Status(status.clone()))).expect("decodes") {
             ToClient::Status(s) => s,

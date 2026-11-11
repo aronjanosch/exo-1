@@ -128,6 +128,10 @@ pub fn contents(rack: RackId, defs: &ItemDefs) -> Container {
     if rack == locker_rack(0) {
         put(&mut c, "welder");
     }
+    // A hand lamp in each of the room's two lockers (#329).
+    if rack == locker_rack(0) || rack == locker_rack(1) {
+        put(&mut c, "hand_lamp");
+    }
     c
 }
 

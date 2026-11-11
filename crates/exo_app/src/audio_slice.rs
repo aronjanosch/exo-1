@@ -184,6 +184,7 @@ pub(crate) struct SliceSounds {
     chime: Handle<SynthAudio>,
     pub(crate) zap: Handle<SynthAudio>,
     clunk: Handle<SynthAudio>,
+    click: Handle<SynthAudio>,
     sweep_down: Handle<SynthAudio>,
     sweep_up: Handle<SynthAudio>,
     pump: Handle<SynthAudio>,
@@ -223,6 +224,7 @@ fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
         chime: add(Sound::Chime),
         zap: add(Sound::Zap),
         clunk: add(Sound::Clunk),
+        click: add(Sound::Click),
         sweep_down: add(Sound::SweepDown),
         sweep_up: add(Sound::SweepUp),
         pump: add(Sound::PumpHum),
@@ -548,6 +550,15 @@ fn extinguisher_dry(mut commands: Commands, s: Res<SliceSounds>, items: Res<Item
     *prev = held;
 }
 
+/// The hand lamp's own switch (#329): one click when it goes on or off. Another player's lamp is silent.
+fn lamp_click(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, lamps: Res<crate::hand_lamp::LampOn>, mut prev: Local<Option<bool>>) {
+    let on = crate::hand_lamp::own_on(&items, &lamps);
+    if prev.is_some_and(|p| p != on) {
+        one_shot(&mut commands, &s.click, LAMP_CLICK_VOL);
+    }
+    *prev = Some(on);
+}
+
 /// TODO(initiator): the slide is not positional yet: it is the same in the whole ship.
 fn door_sound(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut prev: Local<Option<bool>>) {
     let open = items.room.door_open;
@@ -594,9 +605,11 @@ fn health_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, o
     *prev_hold = progress;
 }
 
+const LAMP_CLICK_VOL: f32 = 0.3;
+
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, setup);
-    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms, room_klaxons, ecool_hiss, extinguisher_dry, gun_shot, enemy_boom).in_set(crate::phases::Frame::Input));
+    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms, room_klaxons, ecool_hiss, extinguisher_dry, lamp_click, gun_shot, enemy_boom).in_set(crate::phases::Frame::Input));
 }
 
 #[cfg(test)]

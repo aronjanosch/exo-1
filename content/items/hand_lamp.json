@@ -1,0 +1,13 @@
+{
+  "_comment": "The hand lamp (#329): selected in the bar, its use switches the beam on and off (keeps_on_use: the use takes nothing); it stays on only while it is the selected item. No battery for now. TODO(initiator): shape, colour, mass.",
+  "id": "hand_lamp",
+  "name": "Hand Lamp",
+  "code": "LMP",
+  "take": "collect",
+  "hands": 1,
+  "stack": 1,
+  "use": "lamp",
+  "keeps_on_use": true,
+  "tags": ["small", "tool"],
+  "shape": { "extents": [0.06, 0.06, 0.2], "mass": 0.4, "colour": [0.62, 0.5, 0.12] }
+}

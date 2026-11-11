@@ -383,7 +383,13 @@ pub fn items_net_out(
 const HAND: Vec3 = Vec3::new(0.34, 1.0, -0.4);
 
 #[derive(Component)]
-struct HeldOnRemote(Option<String>);
+pub(crate) struct HeldOnRemote(Option<String>);
+
+impl HeldOnRemote {
+    pub(crate) fn kind(&self) -> Option<&str> {
+        self.0.as_deref()
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 fn remote_held(

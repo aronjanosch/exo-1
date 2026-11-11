@@ -1,6 +1,6 @@
 //! The engine room's wall panel (#313, the airlock panel's kind, #308): a portrait 400 x 640 px texture
-//! (200 x 320 panel pixels at the world's texture scale 2). One page: the title, one large field (LIGHTS ON / OFF,
-//! the only thing to press) and two read-only rows, a word and a short bar each: CHAMBER HEAT and AIR. Actual values
+//! (200 x 320 panel pixels at the world's texture scale 2). One page: one large field (LIGHTS ON / OFF,
+//! the only thing to press) and two read-only rows, a word and a short bar each: HEAT and AIR. Actual values
 //! only. Unpowered: dark glass with a dim NO POWER. Design units are texture pixels; `U` turns them into panel pixels.
 //! All words, colours and lines are starting values. TODO(initiator): look, words and the lines below.
 use crate::raster::{self as r, Prim};
@@ -13,10 +13,10 @@ pub const H: f64 = 320.0;
 /// The press on the light field.
 pub const LIGHTS: &str = "lights";
 
-/// Design heights of the three bands of the page (they add up to the 640 of the texture).
-const TITLE_H: f64 = 96.0;
-const FIELD_H: f64 = 208.0;
-const ROWS_H: f64 = 336.0;
+/// Design heights of the two bands of the page (they add up to the 640 of the texture). Read from 1.5 m (#337): no title
+/// band (the cursor prompt names the panel), the type 26 to 60 mm tall on the 0.20 x 0.32 m glass, the words as large as their width allows.
+const FIELD_H: f64 = 232.0;
+const ROW_H: f64 = 204.0;
 
 /// The air's share (0..1) below which the word is THIN (`monitor::o2_tone`'s warn line) and below which it is NONE.
 /// TODO(initiator): the lines.
@@ -124,18 +124,17 @@ fn band(h: f64, mut prims: Vec<Prim>, mut shapes: Vec<Shape>, action: Option<&st
     canvas(W, h * U, layers, action).fixed(h * U)
 }
 
-fn title() -> Item {
-    // The top edge of the frame.
-    let top = vec![r::rect(0.0, 0.0, 400.0, 2.0, LINE2)];
-    band(TITLE_H, top, vec![text(16.0, 22.0, 368.0, 56.0, "ENGINE ROOM", 48.0, TextFace::DisplayBold, WHITE, 0.1, true)], None)
+/// The largest size (design px) at which `word` fits `width`, up to `max`: a bold display character is about 0.66 of its size wide with tracking.
+fn fit(word: &str, width: f64, max: f64) -> f64 {
+    (width / (word.chars().count().max(1) as f64 * 0.66)).min(max)
 }
 
 fn field(on: bool) -> Item {
     let (word, rgb, edge) = if on { ("ON", WHITE, BLUE) } else { ("OFF", FG2, LINE2) };
-    let prims = vec![r::rect(24.0, 8.0, 352.0, FIELD_H - 24.0, edge), r::rect(30.0, 14.0, 340.0, FIELD_H - 36.0, PLATE)];
+    let prims = vec![r::rect(16.0, 16.0, 368.0, FIELD_H - 24.0, edge), r::rect(22.0, 22.0, 356.0, FIELD_H - 36.0, PLATE)];
     let shapes = vec![
-        text(24.0, 24.0, 352.0, 64.0, "LIGHTS", 64.0, TextFace::DisplayBold, FG2, 0.1, true),
-        text(24.0, 92.0, 352.0, 96.0, word, 96.0, TextFace::DisplayBold, rgb, 0.06, true),
+        text(16.0, 30.0, 368.0, 64.0, "LIGHTS", 56.0, TextFace::DisplayBold, WHITE, 0.08, true),
+        text(16.0, 96.0, 368.0, 120.0, word, 112.0, TextFace::DisplayBold, rgb, 0.06, true),
     ];
     band(FIELD_H, prims, shapes, Some(LIGHTS))
 }
@@ -143,21 +142,22 @@ fn field(on: bool) -> Item {
 /// One read-only row: the label, the word in its colour and a short bar with its fill.
 fn read_row(y: f64, label: &str, word: &str, rgb: [u8; 3], fill: f64, prims: &mut Vec<Prim>, shapes: &mut Vec<Shape>) {
     let fill = if fill.is_finite() { fill.clamp(0.0, 1.0) } else { 0.0 };
-    shapes.push(text(32.0, y + 6.0, 336.0, 46.0, label, 40.0, TextFace::Display, FG2, 0.04, false));
-    shapes.push(text(32.0, y + 54.0, 336.0, 72.0, word, 68.0, TextFace::DisplayBold, rgb, 0.04, false));
-    prims.push(r::rect(32.0, y + 130.0, 336.0, 26.0, LINE2));
-    prims.push(r::rect(34.0, y + 132.0, 332.0, 22.0, TRACK));
+    shapes.push(text(24.0, y + 6.0, 352.0, 66.0, label, 60.0, TextFace::DisplayBold, WHITE, 0.06, false));
+    shapes.push(text(24.0, y + 72.0, 352.0, 98.0, word, fit(word, 352.0, 110.0), TextFace::DisplayBold, rgb, 0.04, false));
+    prims.push(r::rect(24.0, y + 174.0, 352.0, 24.0, LINE2));
+    prims.push(r::rect(26.0, y + 176.0, 348.0, 20.0, TRACK));
     if fill > 0.0 {
-        prims.push(r::rect(34.0, y + 132.0, 332.0 * fill, 22.0, rgb));
+        prims.push(r::rect(26.0, y + 176.0, 348.0 * fill, 20.0, rgb));
     }
 }
 
 fn rows(heat: Heat, heat_fill: f64, air: Air, air_fill: f64) -> Item {
-    let mut prims = vec![r::rect(0.0, ROWS_H - 2.0, 400.0, 2.0, LINE2)];
+    let h = 2.0 * ROW_H;
+    let mut prims = vec![r::rect(0.0, ROW_H - 2.0, 400.0, 2.0, LINE2), r::rect(0.0, h - 2.0, 400.0, 2.0, LINE2)];
     let mut shapes = Vec::new();
-    read_row(0.0, "CHAMBER HEAT", heat.word(), heat.rgb(), heat_fill, &mut prims, &mut shapes);
-    read_row(168.0, "AIR", air.word(), air.rgb(), air_fill, &mut prims, &mut shapes);
-    band(ROWS_H, prims, shapes, None)
+    read_row(0.0, "HEAT", heat.word(), heat.rgb(), heat_fill, &mut prims, &mut shapes);
+    read_row(ROW_H, "AIR", air.word(), air.rgb(), air_fill, &mut prims, &mut shapes);
+    band(h, prims, shapes, None)
 }
 
 fn unpowered() -> Item {
@@ -169,7 +169,7 @@ fn unpowered() -> Item {
 /// The panel for a face. Only a powered room has the LIGHTS action; the field is its hit area.
 pub fn panel(face: Face) -> Panel {
     let root = match face {
-        Face::Live { lights_on, heat, heat_fill, air, air_fill } => column(0.0, vec![title(), field(lights_on), rows(heat, heat_fill, air, air_fill)]),
+        Face::Live { lights_on, heat, heat_fill, air, air_fill } => column(0.0, vec![field(lights_on), rows(heat, heat_fill, air, air_fill)]),
         Face::Unpowered => column(0.0, vec![unpowered()]),
     };
     Panel::new(W, H, root).with_padding(0.0)

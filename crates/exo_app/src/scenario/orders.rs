@@ -58,7 +58,7 @@ fn slate(w: &World) -> (Vec<String>, usize) {
         if let Widget::Canvas { shapes, .. } = l.widget {
             for s in shapes {
                 match s {
-                    Shape::Text { text, .. } => words.push(text.clone()),
+                    Shape::Text { text, .. } | Shape::TextRight { text, .. } => words.push(text.clone()),
                     Shape::Line { width, .. } if *width == 5.0 => strokes += 1,
                     _ => {}
                 }

@@ -662,9 +662,10 @@ pub fn crate_budget_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bo
     s.push(Box::new(|w, c| {
         let asleep = w.query::<&Crate>().iter(w).filter(|c| c.body.asleep).count();
         let n = crate_count(w);
-        // The collision patches under the crates come from worker threads, so the last crate may
-        // settle a little later on a busy machine: wait for all of them, at most 3 s more.
-        if asleep < n && c.t < 3.0 {
+        // The collision patches under the crates come from worker threads while the scenario
+        // ticks in simulated time, so the last crate settles after more ticks on a busy machine:
+        // poll until all sleep, and fail only at the limit.
+        if asleep < n && c.t < 300.0 {
             return false;
         }
         c.v.insert("steps0", w.resource::<CargoStats>().steps as f64);

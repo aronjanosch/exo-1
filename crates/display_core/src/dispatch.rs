@@ -17,7 +17,7 @@ const ROW_H: f64 = 88.0;
 const BOX: f64 = 52.0;
 /// The size of a line's words; a name too long for one line at `WRAP_BELOW` goes on two.
 const LINE_MAX: f64 = 48.0;
-const WRAP_BELOW: f64 = 38.0;
+const WRAP_BELOW: f64 = 33.0;
 const STRIP_SIZE: f64 = 36.0;
 
 /// One order line: the words (`3 GRUMBLITE`) and whether the chute holds enough.

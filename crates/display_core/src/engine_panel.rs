@@ -142,12 +142,12 @@ fn field(on: bool) -> Item {
 /// One read-only row: the label, the word in its colour and a short bar with its fill.
 fn read_row(y: f64, label: &str, word: &str, rgb: [u8; 3], fill: f64, prims: &mut Vec<Prim>, shapes: &mut Vec<Shape>) {
     let fill = if fill.is_finite() { fill.clamp(0.0, 1.0) } else { 0.0 };
-    shapes.push(text(24.0, y + 8.0, 352.0, 60.0, label, 52.0, TextFace::DisplayBold, WHITE, 0.06, false));
-    shapes.push(text(24.0, y + 66.0, 352.0, 100.0, word, fit(word, 352.0, 88.0), TextFace::DisplayBold, rgb, 0.04, false));
-    prims.push(r::rect(24.0, y + 170.0, 352.0, 26.0, LINE2));
-    prims.push(r::rect(26.0, y + 172.0, 348.0, 22.0, TRACK));
+    shapes.push(text(24.0, y + 6.0, 352.0, 66.0, label, 60.0, TextFace::DisplayBold, WHITE, 0.06, false));
+    shapes.push(text(24.0, y + 72.0, 352.0, 98.0, word, fit(word, 352.0, 110.0), TextFace::DisplayBold, rgb, 0.04, false));
+    prims.push(r::rect(24.0, y + 174.0, 352.0, 24.0, LINE2));
+    prims.push(r::rect(26.0, y + 176.0, 348.0, 20.0, TRACK));
     if fill > 0.0 {
-        prims.push(r::rect(26.0, y + 172.0, 348.0 * fill, 22.0, rgb));
+        prims.push(r::rect(26.0, y + 176.0, 348.0 * fill, 20.0, rgb));
     }
 }
 

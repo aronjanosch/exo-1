@@ -746,3 +746,43 @@ fn the_timer_aboard_still_runs_to_an_implosion_and_cooling_still_runs_it_back() 
     assert!(r.timers().1 < before, "cooling runs the timer back");
     assert_eq!(r.outside_timer(), None);
 }
+
+/// A canister's life stays in 0..=100 and finite however long and hard the core burns, and a spent one gives no fill.
+#[test]
+fn canister_life_never_goes_below_zero_and_stays_finite() {
+    let mut r = reactor(50.0);
+    r.set_targets(100.0, 50.0);
+    // Far past the end of the fuel, in big and tiny steps.
+    for dt in [DT, 5.0, 1e-6, 100.0] {
+        for _ in 0..2000 {
+            r.step(dt, 500.0);
+            for c in r.canisters() {
+                assert!(c.life.is_finite() && (0.0..=100.0).contains(&c.life), "{}", c.life);
+            }
+        }
+    }
+    if r.imploded() {
+        return;
+    }
+    assert!(r.canisters().iter().all(|c| c.spent()));
+    assert_eq!(r.available_fill(), 0.0);
+}
+
+#[test]
+fn a_fresh_canister_in_a_spent_slot_brings_the_output_back() {
+    let mut r = reactor(50.0);
+    r.set_mode(Mode::Auto);
+    run(&mut r, 120.0, 500.0);
+    assert!(r.output_kw() > 100.0);
+    r.set_canister_lives(&[0.0, 0.0]);
+    run(&mut r, 60.0, 500.0);
+    assert_eq!(r.output_kw(), 0.0);
+    assert_eq!(r.available_fill(), 0.0);
+    r.remove_canister(0);
+    r.remove_canister(0);
+    r.insert_canister_at(0, Canister::standard()).unwrap();
+    r.insert_canister_at(1, Canister::standard()).unwrap();
+    assert!(r.power_on(), "no restart needed: the power stayed on");
+    run(&mut r, 150.0, 500.0);
+    assert!(r.output_kw() > 100.0, "output {}", r.output_kw());
+}

@@ -1073,3 +1073,103 @@ fn a_box_passes_power_only_working_and_with_a_group_switched_on() {
     }
     assert!(!r.junction_passes(2), "both toggles off");
 }
+
+/// Minutes one new standard canister lasts at the shipped tuning on Auto, steady load, with `n` slots filled.
+fn canister_minutes(n: usize) -> f64 {
+    let shipped = Tuning::shipped();
+    let mut r = EngineRoom::new(shipped.room, shipped.reactor, 11);
+    r.set_engine_wander(false);
+    assert!(r.set_power(true));
+    while r.reactor_mut().remove_canister(0).is_some() {}
+    for _ in 0..n {
+        r.reactor_mut().insert_canister(Canister::standard()).unwrap();
+    }
+    // The ramp-up burns less; measure the settled rate over 5 minutes and extrapolate.
+    run(&mut r, 120.0, Input::auto());
+    r.pump_mut().set_tank(100.0);
+    let before = r.reactor().canisters()[0].life;
+    for _ in 0..5 {
+        run(&mut r, 60.0, Input::auto());
+        r.pump_mut().set_tank(100.0);
+    }
+    let rate = (before - r.reactor().canisters()[0].life) / 300.0;
+    println!("{n} slot(s) filled: {:.4} life/s, injection {:.1}, output {:.0} kW", rate, r.reactor().injection(), r.reactor().output_kw());
+    100.0 / rate / 60.0
+}
+
+/// Both canisters burn together (each loses the same per second), so two filled slots last as long as one
+/// by the burn rule; a second one only lets the injection band be held. Shipped value: about 12 minutes with two slots filled (TODO(initiator): fill_burn 0.3).
+#[test]
+fn a_new_standard_canister_lasts_about_twelve_minutes_at_normal_load() {
+    for n in [1, 2] {
+        let m = canister_minutes(n);
+        println!("{n} slot(s): a canister lasts {m:.1} min");
+        assert!(m.is_finite() && m > 5.0 && m < 24.0, "{m}");
+    }
+}
+
+/// Spent fuel: the output falls to nothing, the battery carries what it can and runs out, a fresh canister in a
+/// spent slot brings the output back by itself (the reactor stays on Auto, no restart), and nothing goes NaN.
+#[test]
+fn spent_fuel_drops_the_ship_to_the_battery_and_a_fresh_canister_brings_it_back() {
+    let shipped = Tuning::shipped();
+    let mut r = EngineRoom::new(shipped.room, shipped.reactor, 11);
+    r.set_engine_wander(false);
+    assert!(r.set_power(true));
+    run(&mut r, 120.0, Input::auto());
+    assert!(r.reactor().output_kw() > 500.0);
+    r.reactor_mut().set_canister_lives(&[0.0, 0.0]);
+    r.battery_mut().set_charge_kwmin(800.0);
+    run(&mut r, 30.0, Input::auto());
+    assert_eq!(r.reactor().output_kw(), 0.0, "no fuel, no output");
+    assert_eq!(r.reactor().available_fill(), 0.0, "a spent canister gives no fill");
+    assert!(r.battery().charge_kwmin() < 800.0, "the battery carries the ship");
+    for _ in 0..10 {
+        run(&mut r, 30.0, Input::auto());
+        r.pump_mut().set_tank(100.0);
+    }
+    assert!(r.battery().charge_kwmin() < 0.01, "and runs out");
+    assert_eq!(r.grid().factor(Group::Lights), 0.0, "lights out: the emergency lamps");
+    assert!(r.reactor().heat().is_finite() && r.reactor().canister_lives().iter().all(|l| *l == 0.0));
+    r.reactor_mut().remove_canister(0);
+    r.reactor_mut().remove_canister(0);
+    r.reactor_mut().insert_canister(Canister::standard()).unwrap();
+    r.reactor_mut().insert_canister(Canister::standard()).unwrap();
+    run(&mut r, 150.0, Input::auto());
+    assert!(r.reactor().output_kw() > 500.0, "output back: {}", r.reactor().output_kw());
+    assert!(r.grid().factor(Group::Lights) > 0.9, "lights back");
+}
+
+/// #313: the room panel's LIGHTS field flips the engine room's lamps by hand; a dead JB-1 ignores it.
+#[test]
+fn the_panel_switch_flips_the_engine_lamps_and_a_dead_jb1_ignores_it() {
+    let mut r = room();
+    settle(&mut r);
+    assert!(!r.engine_lamps_off(), "the lamps start on");
+    assert!(r.set_engine_lamps(false));
+    assert!(r.engine_lamps_off());
+    run(&mut r, 1.0, Input::auto());
+    assert!(r.engine_lamps_off(), "it stays until pressed again");
+    assert!(r.set_engine_lamps(true));
+    assert!(!r.engine_lamps_off());
+    // JB-1 dead: nothing flips, whichever way it is asked.
+    r.junction_mut(0).condition_mut().set_value(0.0);
+    run(&mut r, 1.0, Input::auto());
+    assert!(!r.junction_passes(0));
+    assert!(!r.set_engine_lamps(false) && !r.engine_lamps_off());
+    // The hand switch, once off, stays in the state it had when the box died.
+    let mut off = room();
+    settle(&mut off);
+    off.set_engine_lamps(false);
+    off.junction_mut(0).condition_mut().set_value(0.0);
+    assert!(!off.set_engine_lamps(true) && off.engine_lamps_off());
+}
+
+#[test]
+fn the_lamp_switch_is_saved_with_the_room() {
+    let shipped = Tuning::shipped();
+    let mut r = EngineRoom::from_tuning(&shipped, 11);
+    r.set_engine_lamps(false);
+    let back = EngineRoom::from_save(&shipped, &through_json(&r.to_save()));
+    assert!(back.engine_lamps_off());
+}

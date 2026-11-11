@@ -18,10 +18,11 @@ pub mod junction_boxes;
 pub mod countdown;
 pub mod outside_core;
 pub mod reactor_room;
+pub mod room_panel;
 pub mod start_stand;
 
 pub fn plugin(app: &mut App) {
-    app.add_plugins((junction_boxes::plugin, canister_hum::plugin, fuses::plugin));
+    app.add_plugins((junction_boxes::plugin, canister_hum::plugin, fuses::plugin, room_panel::plugin));
     app.add_plugins((asks::plugin, panels::plugin, coolant::plugin, coolant_tank::plugin, canisters::plugin, reactor_room::plugin));
     app.init_resource::<blast::PendingBlasts>().init_resource::<blast::BlastFlash>();
     app.add_systems(FixedUpdate, blast::collect_blasts.in_set(ShipSet::React));

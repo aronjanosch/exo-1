@@ -16,9 +16,12 @@ pub(super) struct RoomLight {
     box_i: usize,
 }
 
-/// Ours: a red lamp that is lit only in an emergency (the lights factor below 0.1).
+/// Ours: a red lamp that is lit only in an emergency (the lights factor below 0.1). `engine_room`: the engine room's own;
+/// it stays dark while the room's lamps are off by hand (#313).
 #[derive(Component)]
-pub(super) struct EmergencyLamp;
+pub(super) struct EmergencyLamp {
+    engine_room: bool,
+}
 
 pub(super) fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area: Res<DevArea>, mut done: Local<Option<warp_core::PlanetId>>, mut made: Local<Vec<Entity>>) {
     if *done == Some(planet.id) {
@@ -45,7 +48,7 @@ pub(super) fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area:
     for c in [ROOM.centre, CORRIDOR.centre, BRIDGE.centre] {
         made.push(
             commands
-                .spawn((PointLight { color: Color::srgb(1.0, 0.1, 0.05), intensity: 0.0, range: 8.0, shadow_maps_enabled: false, ..default() }, Transform::default(), WorldPos(at(c, 2.6)), EmergencyLamp))
+                .spawn((PointLight { color: Color::srgb(1.0, 0.1, 0.05), intensity: 0.0, range: 8.0, shadow_maps_enabled: false, ..default() }, Transform::default(), WorldPos(at(c, 2.6)), EmergencyLamp { engine_room: c == ROOM.centre }))
                 .id(),
         );
     }
@@ -89,12 +92,19 @@ pub(super) fn room_lights(
     }
     // TODO(initiator): how far the room's lamps dim while the countdown runs (start value 15 %).
     let countdown = items.reactor.as_ref().is_some_and(crate::dev_area::engineering::countdown::countdown_on);
+    let by_hand = engine_lamps_off_by_hand(items.reactor.as_ref());
     for (l, mut light) in &mut lights {
         if !l.alarm {
+            // The box-out glow wins; the hand switch below only counts while the box passes.
             if !crate::dev_area::engineering::junction_boxes::box_passes(items.reactor.as_ref(), l.box_i) {
                 light.intensity = ROOM_LAMP_INTENSITY * BOX_OUT_SHARE;
                 light.color = BOX_OUT_COLOUR;
                 interior.levels[l.box_i] = BOX_OUT_SHARE;
+                continue;
+            }
+            if l.engine_room && by_hand {
+                light.intensity = 0.0;
+                interior.levels[l.box_i] = 0.0;
                 continue;
             }
             light.color = WARM;
@@ -105,11 +115,18 @@ pub(super) fn room_lights(
     }
 }
 
-pub(super) fn emergency_lamps(items: Res<Items>, mut lamps: Query<&mut PointLight, With<EmergencyLamp>>) {
+pub(super) fn emergency_lamps(items: Res<Items>, mut lamps: Query<(&mut PointLight, &EmergencyLamp)>) {
     let on = reactor_core::LightState::emergency(lights_voltage(&items));
-    for mut light in &mut lamps {
-        light.intensity = if on { EMERGENCY_INTENSITY } else { 0.0 };
+    let by_hand = engine_lamps_off_by_hand(items.reactor.as_ref());
+    for (mut light, l) in &mut lamps {
+        light.intensity = if on && !(l.engine_room && by_hand) { EMERGENCY_INTENSITY } else { 0.0 };
     }
+}
+
+/// The engine room's lamps are switched off at the room panel (#313) and its box passes power: plain dark, no emergency glow.
+/// With JB-1 out the room is unpowered anyway (the box-out glow shows) and the panel reads NO POWER.
+pub fn engine_lamps_off_by_hand(n: Option<&item_core::wire::ReactorNews>) -> bool {
+    n.is_some_and(|n| n.engine_lamps_off && crate::dev_area::engineering::junction_boxes::box_passes(Some(n), 0))
 }
 
 pub(super) fn alarm_lights(time: Res<Time>, alarm: Res<ShipAlarm>, mut lights: Query<(&RoomLight, &mut PointLight)>) {
@@ -118,5 +135,24 @@ pub(super) fn alarm_lights(time: Res<Time>, alarm: Res<ShipAlarm>, mut lights: Q
         if l.alarm {
             light.intensity = 40_000.0 * k;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use item_core::wire::ReactorNews;
+
+    #[test]
+    fn off_by_hand_is_dark_only_while_jb1_passes_and_never_without_news() {
+        let mut n = ReactorNews { engine_lamps_off: true, breakers: [true; item_core::wire::BREAKER_GROUPS], ..Default::default() };
+        n.junctions[0].working = true;
+        assert!(engine_lamps_off_by_hand(Some(&n)));
+        n.engine_lamps_off = false;
+        assert!(!engine_lamps_off_by_hand(Some(&n)));
+        n.engine_lamps_off = true;
+        n.junctions[0].working = false;
+        assert!(!engine_lamps_off_by_hand(Some(&n)), "JB-1 out: the box-out glow, not plain dark");
+        assert!(!engine_lamps_off_by_hand(None));
     }
 }

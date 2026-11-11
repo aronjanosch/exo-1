@@ -132,7 +132,7 @@ impl Default for ReactorTuning {
         ReactorTuning {
             max_output_kw: 2000.0,
             slots: 4,
-            fill_burn: 0.2,
+            fill_burn: 0.3,
             heat_rate: 10.0,
             fire_delay_s: 30.0,
             implosion_delay_s: 120.0,

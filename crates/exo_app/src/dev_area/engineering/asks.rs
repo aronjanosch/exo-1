@@ -12,7 +12,7 @@ pub fn plugin(app: &mut App) {
 
 fn is_mine(a: &ReactorAsk) -> bool {
     use ReactorAsk::*;
-    matches!(a, SetManual(_) | SetInjection(_) | SetConverter(_) | EmergencyCool | SetPower(_) | SetBreaker(..) | SetAuxSwitch(..) | SetLimit(..) | SetBatteryRecharge(_) | SetPumpMode(_) | Boost(_))
+    matches!(a, SetManual(_) | SetInjection(_) | SetConverter(_) | EmergencyCool | SetPower(_) | SetBreaker(..) | SetAuxSwitch(..) | SetLimit(..) | SetBatteryRecharge(_) | SetPumpMode(_) | Boost(_) | SetEngineLamps(_))
 }
 
 fn asks(mut items: ResMut<Items>, mut sim: ResMut<ReactorSim>) {
@@ -44,6 +44,11 @@ pub fn apply(s: &mut ReactorSim, a: ReactorAsk) -> bool {
         ReactorAsk::SetPower(on) => {
             if !s.room.set_power(on) {
                 info!("reactor: power on refused (broken)");
+            }
+        }
+        ReactorAsk::SetEngineLamps(on) => {
+            if !s.room.set_engine_lamps(on) {
+                info!("engine room panel: lamps ask refused (JB-1 passes no power)");
             }
         }
         ReactorAsk::SetBreaker(g, on) => s.room.set_breaker(group_of(g), on),

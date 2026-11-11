@@ -50,7 +50,7 @@ fn oxygen_shown(w: &World) -> Option<f64> {
     w.resource::<Vitals>().oxygen
 }
 
-pub(super) fn engine_room_steps(s: &mut Vec<Step>) {
+pub(super) fn engine_room_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "engine room: into the corridor");
@@ -253,4 +253,69 @@ pub(super) fn engine_room_steps(s: &mut Vec<Step>) {
             true
         }));
     }
+
+    // The room panel beside the door (#313): F on it, LIGHTS off and on, a dead JB-1 ignores the field.
+    use super::reactor::{click_until, use_display};
+    use crate::dev_area::engineering::room_panel::{ENGINE_PANEL_ID, ENGINE_PANEL_NAME};
+    use crate::dev_area::layout::ENGINE_PANEL_AT;
+    use crate::dev_area::ship::ReactorSim;
+    use item_core::wire::ReactorAsk;
+    fn sim_off(w: &World) -> bool {
+        w.resource::<ReactorSim>().room.engine_lamps_off()
+    }
+    /// What the lamps' system reads: the news as the client has it.
+    fn news_dark(w: &World) -> bool {
+        crate::dev_area::hull::lights::engine_lamps_off_by_hand(w.resource::<Items>().reactor.as_ref())
+    }
+    fn panel_wait(what: &'static str, done: fn(&World) -> bool) -> Step {
+        Box::new(move |w, c| {
+            if c.t == 0.0 {
+                begin(w, c, what);
+                return false;
+            }
+            if done(w) {
+                end(w, c, format!("{:.1} s", c.t));
+                return true;
+            }
+            if c.t >= 5.0 {
+                check(c, false, format!("{what}: not within 5 s"));
+                return true;
+            }
+            false
+        })
+    }
+    use_display(s, ENGINE_PANEL_NAME, ENGINE_PANEL_ID, [ENGINE_PANEL_AT[0], ENGINE_PANEL_AT[1] - 1.5]);
+    s.push(shot_step("engine-room-panel-1_5m"));
+    s.push(Box::new(|w, c| {
+        begin(w, c, "engine room panel: the lamps start on");
+        check(c, !sim_off(w) && !news_dark(w), "engine room panel: lamps on at the start".into());
+        end(w, c, String::new());
+        true
+    }));
+    s.push(click_until(ENGINE_PANEL_ID, "lights", None, "engine room panel: LIGHTS switches the lamps off", sim_off));
+    s.push(panel_wait("engine room panel: the news carries it (the lamp level follows)", news_dark));
+    s.push(click_until(ENGINE_PANEL_ID, "lights", None, "engine room panel: LIGHTS again, the lamps are back", |w| !sim_off(w)));
+    s.push(panel_wait("engine room panel: the news is back to lit", |w| !news_dark(w)));
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "engine room panel: a dead JB-1 ignores the field");
+            w.resource_mut::<ReactorSim>().room.junction_mut(0).condition_mut().set_value(0.0);
+            return false;
+        }
+        if c.t < 0.5 {
+            return false;
+        }
+        if !c.v.contains_key("asked") {
+            c.v.insert("asked", 1.0);
+            w.resource_mut::<Items>().ask_reactor(ReactorAsk::SetEngineLamps(false));
+            return false;
+        }
+        if c.t < 1.5 {
+            return false;
+        }
+        check(c, !sim_off(w) && !news_dark(w), "engine room panel: JB-1 dead, the ask changed nothing".into());
+        w.resource_mut::<ReactorSim>().room.junction_mut(0).condition_mut().set_value(100.0);
+        end(w, c, String::new());
+        true
+    }));
 }

@@ -167,6 +167,7 @@ impl ReactorSim {
             delivered_kw: Group::ALL.map(|g| grid.supply(g).delivered_kw),
             demand_kw: Group::ALL.map(|g| grid.group(g).demand_kw),
             lights_factor: grid.factor(Group::Lights),
+            engine_lamps_off: self.room.engine_lamps_off(),
             aux_on: self.room.aux_enabled(),
             aux_life_support: self.room.aux_switch(Group::LifeSupport),
             aux_lights: self.room.aux_switch(Group::Lights),
@@ -784,6 +785,21 @@ mod tests {
         apply_any(&mut s, ReactorAsk::SetPumpMode(PumpMode::High), &cfg(), &mut k);
         settle(&mut s, |n| n.flow >= 0.99);
         assert!(s.news(1.0).pump_on && s.news(1.0).flow >= 0.99);
+    }
+
+    /// #313: the room panel's LIGHTS ask reaches the sim and the news (so a client sees it); a dead JB-1 ignores it.
+    #[test]
+    fn the_engine_lamps_ask_flips_the_news_and_a_dead_jb1_ignores_it() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        assert!(!s.news(1.0).engine_lamps_off);
+        apply_any(&mut s, ReactorAsk::SetEngineLamps(false), &cfg(), &mut k);
+        assert!(s.news(1.0).engine_lamps_off);
+        apply_any(&mut s, ReactorAsk::SetEngineLamps(true), &cfg(), &mut k);
+        assert!(!s.news(1.0).engine_lamps_off);
+        s.room.junction_mut(0).condition_mut().set_value(0.0);
+        apply_any(&mut s, ReactorAsk::SetEngineLamps(false), &cfg(), &mut k);
+        assert!(!s.news(1.0).engine_lamps_off, "JB-1 dead: the field is ignored");
     }
 
     #[test]

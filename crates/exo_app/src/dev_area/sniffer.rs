@@ -334,6 +334,20 @@ pub fn apply_section(host: &mut PocketHost, cfg: &DigConfig, saved: Option<Pocke
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_pockets_section_reads_back_and_a_bad_one_is_refused() {
+        let cfg = DigConfig::load(&crate::content_files("gameplay")).unwrap();
+        let field = PocketField::new(&cfg.pocket, ground(&cfg), SEED);
+        let mut env = Envelope::new();
+        assert_eq!(read_section(&env).unwrap(), None, "an older save has no section");
+        env.put(SECTION, VERSION, &field.saved());
+        let back = read_section(&Envelope::from_json(&env.to_json()).unwrap()).unwrap();
+        assert_eq!(back, Some(field.saved()));
+        let mut bad = Envelope::new();
+        bad.put(SECTION, VERSION + 1, &0u32);
+        assert!(read_section(&bad).is_err());
+    }
     use super::*;
     use crate::dev_area::layout;
 

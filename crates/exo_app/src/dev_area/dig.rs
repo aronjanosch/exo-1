@@ -285,6 +285,21 @@ pub fn apply_section(st: &mut DigState, cfg: &DigConfig, saved: Option<Vec<Vein>
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_veins_section_reads_back_and_a_bad_one_is_refused() {
+        let mut env = Envelope::new();
+        assert_eq!(read_section(&env).unwrap(), None, "an older save has no section");
+        env.put(SECTION, VERSION, &vec![Vein { ore: "grumblite".into(), chunks_left: 3, heat: 0.5, regrow: 0.0 }]);
+        let back = read_section(&Envelope::from_json(&env.to_json()).unwrap()).unwrap().unwrap();
+        assert_eq!(back[0].chunks_left, 3);
+        let mut bad = Envelope::new();
+        bad.put(SECTION, VERSION + 1, &0u32);
+        assert!(read_section(&bad).is_err());
+        let mut bad = Envelope::new();
+        bad.put(SECTION, VERSION, &vec![1, 2]);
+        assert!(read_section(&bad).is_err());
+    }
     use super::*;
 
     #[test]

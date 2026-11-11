@@ -44,6 +44,8 @@ impl Pair {
                 let hb: Vec<_> = (1..5).map(|i| host_holder(self, i)).collect();
                 let cn = self.client.world().resource::<CrateNet>();
                 let tr: Vec<_> = self.client.world().resource::<exo_app::items_net::RemoteBodies>().tracks.iter().filter(|(k, _)| **k & (1 << 63) != 0).map(|(k, t)| (k & 0xffff, t.history.iter().map(|p| (p.t, p.pos.z)).collect::<Vec<_>>())).collect();
+                let hbs: Vec<_> = hc.iter().chain(&cc).map(|c| c.handback).collect();
+                println!("HANDBACKS {hbs:?}");
                 println!("TRACKS {tr:?} playout {:?}", self.client.world().resource::<exo_app::net_live::Net>().playout_time());
                 println!("STATE host {hc:?}\nclient {cc:?}\nmine {:?} refused {:?} client book {:?} host book {hb:?}\nheld host {} client {} breaks client {}", cn.mine, cn.refused, (1..5).map(|i| cn.book.holder(i)).collect::<Vec<_>>(), held_crate(&self.host).is_some(), held_crate(&self.client).is_some(), self.client.world().resource::<Grab>().breaks);
                 panic!("timed out after {secs} s: {what}");
@@ -330,7 +332,7 @@ fn crates_and_tubs_over_150_ms_and_2_percent_loss() {
 #[test]
 fn a_holder_who_leaves_lets_the_crate_go() {
     let _g = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
-    let (mut p, ids) = session(false, true);
+    let (mut p, _) = session(false, true);
     let small = p.host.world_mut().query::<(&CrateId, &Crate)>().iter(p.host.world()).find(|(_, c)| c.size == 0).unwrap().0 .0;
     p.until(30.0, "the client has the crates", |p| crates(&mut p.client).len() == 3 && crate_of(&mut p.client, small).is_some_and(|c| c.view));
     take(&mut p.client, small);

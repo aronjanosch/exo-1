@@ -63,7 +63,7 @@ pub struct RoomTuning {
     pub spark_fire_size: f64,
     pub surge_damage: f64,
     /// Coolant tank use while the pump runs, % of the tank per second, before any heat.
-    /// TODO(initiator): value. Full tank at normal running lasts about 6.5 min with the rest.
+    /// TODO(initiator): value. Full tank at normal Auto load lasts about 10 min, at critical heat about 5 (#331).
     pub coolant_use_base: f64,
     /// Extra coolant use, % of the tank per second per unit of heat the reactor makes, at full
     /// flow: the pump uses more the more heat it carries away. TODO(initiator): value.
@@ -119,8 +119,8 @@ impl Default for RoomTuning {
             sparks_per_s: 0.1,
             spark_fire_size: 0.05,
             surge_damage: 30.0,
-            coolant_use_base: 0.04,
-            coolant_use_per_heat: 0.0013,
+            coolant_use_base: 0.0164,
+            coolant_use_per_heat: 0.00064,
             coolant_low: 25.0,
             coolant_canister: 50.0,
             pump_leak_max: 0.01,

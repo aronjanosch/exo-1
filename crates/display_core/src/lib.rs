@@ -3,6 +3,7 @@ use glam::{DQuat, DVec2, DVec3};
 use std::borrow::Cow;
 
 pub mod airlock_panel;
+pub mod engine_panel;
 pub mod canvas;
 pub mod captain;
 pub mod fabricator;

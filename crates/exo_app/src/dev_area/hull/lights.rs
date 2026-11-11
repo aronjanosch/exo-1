@@ -14,6 +14,9 @@ pub(super) struct RoomLight {
     engine_room: bool,
     /// The junction box that feeds this lamp (#328): broken or switched off, the lamp is a dim red glow.
     box_i: usize,
+    /// The light this lamp keeps while its box is out, in lumens: the first lamps of each room keep the old dim glow, the lamps
+    /// added for a lit room (#328) none, so a dead room looks as before.
+    glow: f32,
 }
 
 /// Ours: a red lamp that is lit only in an emergency (the lights factor below 0.1). `engine_room`: the engine room's own;
@@ -34,13 +37,18 @@ pub(super) fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area:
     }
     let at = |p: [f64; 2], h: f64| area.ground(&planet, p, h).map(|(w, _)| w).unwrap_or(DVec3::ZERO);
     let warm = WARM;
-    let lamps = [([-16.5, -15.5], 2.9, false), ([-11.5, -15.5], 2.9, false), ([-15.0, -9.2], 2.9, false), ([-5.0, -9.2], 2.9, false), ([2.0, -9.2], 2.9, false), ([-14.0, -15.0], 2.6, true), ([-7.7, -9.2], 2.6, true), ([EQUIPMENT.centre[0] - 1.5, EQUIPMENT.centre[1]], 2.9, false), ([EQUIPMENT.centre[0] + 1.5, EQUIPMENT.centre[1]], 2.9, false), (AIRLOCK.centre, 2.9, false), (BRIDGE.centre, 2.9, false), (TURRET_ROOM.centre, 2.9, false), (LAB_ROOM.centre, 2.9, false), (MEDBAY_ROOM.centre, 2.9, false)];
-    for (p, h, alarm) in lamps {
+    // The first lamps are the original ones (they keep the box-out glow); `EXTRA_LAMPS` fill the rooms' corners for a lit room.
+    let lamps: Vec<([f64; 2], f64, bool, bool)> = [([-16.5, -15.5], 2.9, false), ([-11.5, -15.5], 2.9, false), ([-15.0, -9.2], 2.9, false), ([-5.0, -9.2], 2.9, false), ([2.0, -9.2], 2.9, false), ([-14.0, -15.0], 2.6, true), ([-7.7, -9.2], 2.6, true), ([EQUIPMENT.centre[0] - 1.5, EQUIPMENT.centre[1]], 2.9, false), ([EQUIPMENT.centre[0] + 1.5, EQUIPMENT.centre[1]], 2.9, false), (AIRLOCK.centre, 2.9, false), (BRIDGE.centre, 2.9, false), (TURRET_ROOM.centre, 2.9, false), (LAB_ROOM.centre, 2.9, false), (MEDBAY_ROOM.centre, 2.9, false)]
+        .into_iter()
+        .map(|(p, h, alarm)| (p, h, alarm, true))
+        .chain(EXTRA_LAMPS.iter().map(|&p| (p, 2.9, false, false)))
+        .collect();
+    for (p, h, alarm, glows) in lamps {
         let colour = if alarm { Color::srgb(1.0, 0.1, 0.05) } else { warm };
-        let intensity = if alarm { 0.0 } else { 60_000.0 };
+        let intensity = if alarm { 0.0 } else { ROOM_LAMP_INTENSITY };
         made.push(
             commands
-                .spawn((PointLight { color: colour, intensity, range: 12.0, shadow_maps_enabled: false, ..default() }, Transform::default(), WorldPos(at(p, h)), RoomLight { alarm, engine_room: (p[0] - ROOM.centre[0]).abs() <= ROOM.half[0] && (p[1] - ROOM.centre[1]).abs() <= ROOM.half[1], box_i: box_of_point(p) }))
+                .spawn((PointLight { color: colour, intensity, range: LAMP_RANGE, shadow_maps_enabled: false, ..default() }, Transform::default(), WorldPos(at(p, h)), RoomLight { glow: if glows { BOX_OUT_GLOW } else { 0.0 }, alarm, engine_room: (p[0] - ROOM.centre[0]).abs() <= ROOM.half[0] && (p[1] - ROOM.centre[1]).abs() <= ROOM.half[1], box_i: box_of_point(p) }))
                 .id(),
         );
     }
@@ -56,10 +64,25 @@ pub(super) fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area:
 
 /// The room lamps' colour.
 const WARM: Color = Color::srgb(1.0, 0.9, 0.75);
-/// Peak intensity of the room's warm lamps, at full brightness.
-const ROOM_LAMP_INTENSITY: f32 = 60_000.0;
-/// Ours: a lamp whose junction box is out keeps this share of its light, reddish, so the room stays playable (#328).
-/// TODO(initiator): the share (start value 10 %) and the colour.
+/// Peak intensity of the room's warm lamps, at full brightness (lumens). The camera's exposure is the Bevy default (EV 9.7: a wall
+/// 3 m from a 60 000 lm lamp came out at about a twentieth of white), so a lit room needs several times that. TODO(initiator): look.
+const ROOM_LAMP_INTENSITY: f32 = 300_000.0;
+/// How far a lamp reaches (m). Lamps have no shadows and shine through walls, so this also bounds the leak into the next room.
+const LAMP_RANGE: f32 = 9.0;
+/// Further ceiling lamps (area metres) so that no room's wall is more than about 4 m from one (#328).
+const EXTRA_LAMPS: [[f64; 2]; 14] = [
+    [-17.5, -18.0], [-11.0, -18.0], [-17.5, -12.5], [-11.0, -12.5], // engine room corners (two lamps stand in its middle)
+    [-10.0, -9.2], [-1.5, -9.2], // corridor between its three
+    [-0.9, -13.5], [2.1, -13.5], // storage room
+    [-5.7, -13.85], // medbay
+    [-17.5, -4.4], [-12.5, -4.4], // bridge
+    [-3.0, -4.4], [2.2, -4.4], // lab
+    [-7.7, -4.4], // turret room
+];
+/// Ours: a lamp whose junction box is out keeps this much light, reddish, so the room stays playable (#328). It was 10 % of
+/// the old 60 000 lm lamps and stays that in absolute terms. TODO(initiator): the value and the colour.
+const BOX_OUT_GLOW: f32 = 6_000.0;
+/// The ambient level (share of the interior ambient) a room with its box out counts as.
 const BOX_OUT_SHARE: f32 = 0.1;
 const BOX_OUT_COLOUR: Color = Color::srgb(1.0, 0.04, 0.02);
 /// Ours: the emergency lamps' intensity while on. `TODO(initiator)`.
@@ -97,7 +120,7 @@ pub(super) fn room_lights(
         if !l.alarm {
             // The box-out glow wins; the hand switch below only counts while the box passes.
             if !crate::dev_area::engineering::junction_boxes::box_passes(items.reactor.as_ref(), l.box_i) {
-                light.intensity = ROOM_LAMP_INTENSITY * BOX_OUT_SHARE;
+                light.intensity = l.glow;
                 light.color = BOX_OUT_COLOUR;
                 interior.levels[l.box_i] = BOX_OUT_SHARE;
                 continue;

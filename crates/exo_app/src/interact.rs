@@ -52,6 +52,8 @@ pub enum Target {
     ReactorPart(usize),
     /// The fabricator's push button (#326).
     FabButton,
+    /// The dispatch chute's SEND lever (#334).
+    DispatchLever,
     /// A toggle of a junction box (#322): the box and the toggle on it.
     JunctionToggle(usize, usize),
     /// A blown junction box (#328): F fits a fuse from the hand; without one the prompt says a fuse is needed.
@@ -129,6 +131,7 @@ fn verb(t: &Target, size: &str) -> String {
         Target::ReactorPart(_) => "use the reactor part".into(),
         Target::JunctionToggle(..) => "switch ".into(),
         Target::FabButton => "push ".into(),
+        Target::DispatchLever => "pull ".into(),
         Target::JunctionFuse(_) => "fit fuse ".into(),
         Target::Container { .. } => "open ".into(),
         Target::AirlockLocked => "locked".into(),
@@ -153,7 +156,7 @@ pub fn interaction(
     mut gp: ResMut<crate::gameplay::Gameplay>,
     (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel), Without<crate::displays::ReadOnly>>),
     (time, mut items, loose, door, doors, bridge_door, bridge_doors): (Res<Time>, ResMut<Items>, Query<(Entity, &Crate, &LooseItem)>, Option<Res<EngineDoor>>, Query<&Position, With<Slab>>, Option<Res<BridgeDoor>>, Query<&BridgeSlab>),
-    (boxes, supply, airlock_doors, equip_door, equip_doors, mut cw, mut ui, specs, reactor_rooms, junction_rooms, fab_machines, tubs): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::fire::extinguisher::Supply>>, Query<(&crate::dev_area::hull::airlock::AirlockSlab, &Position)>, Option<Res<EquipDoor>>, Query<&Position, With<EquipSlab>>, ResMut<crate::container_window::ContainerWindow>, ResMut<crate::items::InventoryUi>, Res<crate::container_window::ContainerSpecs>, Query<(&crate::dev_area::engineering::reactor_room::ReactorRoom, &crate::controls_kit::Machine)>, Query<&crate::dev_area::engineering::junction_boxes::JunctionRoom>, Query<&crate::dev_area::fabricator::FabMachine>, Res<crate::ore_tub::TubSpots>),
+    (boxes, supply, airlock_doors, equip_door, equip_doors, mut cw, mut ui, specs, reactor_rooms, junction_rooms, fab_machines, tubs, dispatch_machines): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::fire::extinguisher::Supply>>, Query<(&crate::dev_area::hull::airlock::AirlockSlab, &Position)>, Option<Res<EquipDoor>>, Query<&Position, With<EquipSlab>>, ResMut<crate::container_window::ContainerWindow>, ResMut<crate::items::InventoryUi>, Res<crate::container_window::ContainerSpecs>, Query<(&crate::dev_area::engineering::reactor_room::ReactorRoom, &crate::controls_kit::Machine)>, Query<&crate::dev_area::engineering::junction_boxes::JunctionRoom>, Query<&crate::dev_area::fabricator::FabMachine>, Res<crate::ore_tub::TubSpots>, Query<&crate::dev_area::dispatch::DispatchMachine>),
 ) {
     let Ok(mut pl) = players.single_mut() else { return };
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };
@@ -284,6 +287,8 @@ pub fn interaction(
         let junction_pick = (pl.ship.is_none() && own_frame).then(|| junction_rooms.iter().find_map(|r| r.pick(eye, look, USE_RANGE).map(|k| Target::JunctionToggle(r.index, k)))).flatten();
         // The fabricator's button (#326): its own ray test, nearer than the housing's cone (which opens the hatch).
         let fab_pick = (pl.ship.is_none() && own_frame && fab_machines.iter().any(|m| m.pick_button(eye, look, USE_RANGE))).then_some(Target::FabButton);
+        // The dispatch chute's lever (#334): the same, nearer than the housing's cone (which opens the hatch).
+        let dispatch_pick = (pl.ship.is_none() && own_frame && dispatch_machines.iter().any(|m| m.pick_lever(eye, look, USE_RANGE))).then_some(Target::DispatchLever);
         // The body of a blown box (#328): the fuse goes in there; without a fuse the prompt tells what is missing.
         let fuse_pick = (pl.ship.is_none() && own_frame)
             .then(|| junction_rooms.iter().find(|r| r.aims(eye, look, USE_RANGE) && items.reactor.as_ref().is_some_and(|n| fuses::hint(n, r.index, fuses::holds_fuse(&items)).is_some())).map(|r| Target::JunctionFuse(r.index)))
@@ -297,7 +302,7 @@ pub fn interaction(
                 let rack_pick = pl.ship.is_none().then(|| supply.as_ref().and_then(|sup| boxes.iter().find_map(|(b, p)| sup.0.rack_in(&b.id).filter(|_| in_cone(eye, look, p.0, half, USE_RANGE).is_some()).map(Target::Rack)))).flatten();
                 // Lockers stand side by side (#311): of the containers in the cone the one nearest the view's centre wins.
                 let container_pick = pl.ship.is_none().then(|| specs.0.iter().filter_map(|s| container_pos(s.rack).filter(|p| in_cone(eye, look, *p, half, USE_RANGE).is_some()).map(|p| ((p - eye).angle_between(look), s))).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, s)| Target::Container { rack: s.rack, by: items.client.holder(s.rack).filter(|p| *p != items.me()) })).flatten();
-                reactor_pick.or(junction_pick).or(fab_pick).or(fuse_pick).or(item_target.map(Target::Item)).or(panel_pick.map(Target::Panel)).or(door_pick).or(bridge_pick).or(equip_pick).or(airlock_pick).or(rack_pick).or(container_pick)
+                reactor_pick.or(junction_pick).or(fab_pick).or(dispatch_pick).or(fuse_pick).or(item_target.map(Target::Item)).or(panel_pick.map(Target::Panel)).or(door_pick).or(bridge_pick).or(equip_pick).or(airlock_pick).or(rack_pick).or(container_pick)
             }
         }
     };
@@ -336,6 +341,7 @@ pub fn interaction(
         Some(Target::ReactorPart(i)) => reactor_rooms.iter().next().map(|(room, m)| room.part_at(*i, m)),
         Some(Target::JunctionToggle(i, k)) => junction_rooms.iter().find(|r| r.index == *i).map(|r| r.toggle_at(*k)),
         Some(Target::FabButton) => fab_machines.iter().next().map(|m| m.button_at),
+        Some(Target::DispatchLever) => dispatch_machines.iter().next().map(|m| m.lever_at),
         Some(Target::JunctionFuse(i)) => junction_rooms.iter().find(|r| r.index == *i).map(|r| r.toggle_at(0)),
         Some(Target::Rack(r)) => supply.as_ref().and_then(|sup| boxes.iter().find(|(b, _)| sup.0.rack_in(&b.id) == Some(*r)).map(|(_, p)| p.0)),
         Some(Target::Container { rack, .. }) => container_pos(*rack),
@@ -355,6 +361,7 @@ pub fn interaction(
                 Target::Panel(e) => p.push_str(&displays.get(*e).map(|(_, d)| d.name.clone()).unwrap_or_default()),
                 Target::JunctionToggle(i, k) => p.push_str(&crate::dev_area::engineering::junction_boxes::describe(*i, *k, &items).name),
                 Target::FabButton => p.push_str("Fabricator start"),
+                Target::DispatchLever => p.push_str("Dispatch SEND lever"),
                 Target::JunctionFuse(i) => p.push_str(&format!("JB-{}{}", i + 1, if fuses::holds_fuse(&items) { "" } else { "  (needs a fuse)" })),
                 Target::Item(e) => {
                     if let Ok((_, _, li)) = loose.get(*e) {
@@ -430,6 +437,7 @@ pub fn interaction(
                     note = (format!("{throw_key} throw"), Tone::Normal);
                 }
                 Target::FabButton => set("Push", "Fabricator start".into()),
+                Target::DispatchLever => set("Pull", "Dispatch SEND lever".into()),
                 Target::JunctionToggle(i, k) => {
                     let d = crate::dev_area::engineering::junction_boxes::describe(*i, *k, &items);
                     set(d.verb, d.name);
@@ -599,6 +607,7 @@ pub fn interaction(
         Target::ReactorPart(i) => reactor_room::press(i, &mut items, time.elapsed_secs_f64()),
         Target::JunctionToggle(i, k) => crate::dev_area::engineering::junction_boxes::press(i, k, &mut items),
         Target::FabButton => items.ask_fab(item_core::wire::FabAsk::Push),
+        Target::DispatchLever => items.ask_dispatch(item_core::wire::DispatchAsk::Send),
         Target::JunctionFuse(i) => fuses::press(i, &mut items, time.elapsed_secs_f64()),
         Target::Rack(rack) => {
             let slot = items.client.view.selected;

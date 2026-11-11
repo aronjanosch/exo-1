@@ -517,6 +517,7 @@
     "CORE EJECTED. It went out through the bottom, canisters and all. The reactor is dead until somebody fits a new core.",
     "CORE EJECTED. Somebody pulled the lever. The core is somewhere under the ship now."
   ],
+  "notice.dispatch.sent": "Order {n} sent. The chute swallowed it with a satisfied burp.",
   "notice.reactor.scram": [
     "SCRAM. The chamber is vented, the lights dip and a good part of the canisters' fill goes out with it. Safe, and very expensive.",
     "SCRAM. Somebody hit the big red button. The reactor is off and the canisters are a little lighter."

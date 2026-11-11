@@ -175,13 +175,12 @@ pub(super) fn sniffer_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) 
 
     // A hold on it opens the vent.
     s.push(Box::new(|w, c| {
-        begin(w, c, "sniffer: LMB held on the pocket opens the vent");
-        stand_at(w, 0.5);
-        lmb(w, true);
-        c.v.insert("t0", 0.0);
-        false
-    }));
-    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "sniffer: LMB held on the pocket opens the vent");
+            stand_at(w, 0.5);
+            lmb(w, true);
+            return false;
+        }
         if c.t > 0.5 && !c.v.contains_key("progress") {
             let sn = *w.resource::<Sniffing>();
             let tap = w.resource::<PocketHost>().field.pockets()[0].tap;
@@ -206,6 +205,9 @@ pub(super) fn sniffer_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) 
     // The vent from 3 m, puffing.
     s.push(Box::new(|w, c| {
         begin(w, c, "sniffer: the vent from 3 m");
+        // The place the pocket will be spent at: its successor must lie away from it.
+        let old = ground(w, pocket(w).0, 0.0);
+        c.p.insert("spent_at", old);
         stand_at(w, 3.0);
         let top = ground(w, pocket(w).0, 0.35);
         look_at(w, top);
@@ -245,11 +247,11 @@ pub(super) fn sniffer_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) 
             if c.t < 0.4 {
                 return false;
             }
-            if !c.v.contains_key("pressed") {
+            if !c.v.contains_key(what) {
                 let p = prompt(w);
                 check(c, p.contains("fill jar"), format!("{what}: the hint offers it ({p:?})"));
                 tap(w, KeyCode::KeyF);
-                c.v.insert("pressed", 1.0);
+                c.v.insert(what, 1.0);
                 return false;
             }
             if bar_count(w, FIZZ_JAR) == n {
@@ -271,7 +273,7 @@ pub(super) fn sniffer_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) 
         let filled = w.resource::<PocketHost>().filled;
         check(c, filled == 3, format!("sniffer: exactly three jars were filled ({filled})"));
         check(c, state == PocketState::Hidden && jars == 3, format!("sniffer: the successor is hidden with all its jars ({state:?}, {jars})"));
-        c.p.insert("spent_at", ground(w, at, 0.0));
+        let _ = at;
         true
     }));
     s.push(until("sniffer: the news show the vent gone", 2.0, |w| items(w).dig.pockets.as_ref().is_some_and(|n| n.pockets.iter().all(|p| p.open_ds == 0))));

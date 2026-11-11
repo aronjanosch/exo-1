@@ -3,6 +3,7 @@ pub mod fabricator;
 pub mod ingredient;
 pub mod lab;
 pub mod mixing;
+pub mod orders;
 pub mod recipe;
 pub mod skill;
 pub mod station;

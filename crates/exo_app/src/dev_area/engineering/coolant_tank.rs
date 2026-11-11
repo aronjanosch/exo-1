@@ -38,7 +38,7 @@ const PLATE_FOOT: f64 = 0.38;
 const FILLER: [f64; 3] = [0.22, 0.12, 0.14];
 const COLUMN_W: f64 = 0.11;
 const COLUMN_D: f64 = 0.05;
-const MARK_H: f64 = 0.025;
+const MARK_H: f64 = 0.04;
 /// The hit volume the view aims at: plate, glass and filler (model frame, centre and size).
 const BODY_SIZE: [f64; 3] = [0.34, 1.54, 0.2];
 const BODY_CENTRE: [f64; 3] = [0.0, PLATE_FOOT + BODY_SIZE[1] * 0.5 - 0.04, BODY_SIZE[2] * 0.5];

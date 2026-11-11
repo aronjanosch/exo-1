@@ -11,6 +11,8 @@ use crate::items::{Items, LOCAL};
 use item_core::wire::{ReactorAsk, ReactorFault};
 use item_core::Request;
 
+/// The picture is taken about 4 m from the glass (3.2 out, this far along the wall).
+const SHOT_SIDE: f64 = 2.4;
 const CANISTER: &str = "coolant_canister";
 const DIGITS: [KeyCode; 8] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8];
 
@@ -46,7 +48,13 @@ fn glass(w: &mut World) -> DVec3 {
 
 /// Stands `out` metres in front of the tank.
 fn stand_before(w: &mut World, out: f64) {
-    let at = the_tank(w).expect("the coolant tank stands there").world([0.0, 0.0, out]);
+    stand_beside(w, 0.0, out);
+}
+
+/// `side` metres along the wall from the tank and `out` metres out of it (the reactor's drum stands straight out, so the picture
+/// is taken from the side).
+fn stand_beside(w: &mut World, side: f64, out: f64) {
+    let at = the_tank(w).expect("the coolant tank stands there").world([side, 0.0, out]);
     place_walker(w, at);
 }
 
@@ -120,7 +128,7 @@ pub(super) fn coolant_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) 
             let now = w.resource::<Time>().elapsed_secs_f64();
             let stack = items(w).defs.get(CANISTER).expect("coolant_canister").stack_of(3);
             let _ = w.resource_mut::<Items>().give(now, LOCAL, stack);
-            stand_before(w, 4.0);
+            stand_beside(w, SHOT_SIDE, 3.2);
             return None;
         }
         let at = glass(w);

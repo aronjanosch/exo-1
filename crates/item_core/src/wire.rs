@@ -32,6 +32,8 @@ pub enum ToHost {
     Fab(FabAsk),
     /// The sniffer's tap, held while LMB is held (#333): the host decides whether a pocket opens.
     Tap(TapAsk),
+    /// A cargo crate: ask to hold it, let it go (#332).
+    Crate(crate::cargo_wire::CrateAsk),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -58,6 +60,8 @@ pub enum ToClient {
     Fab(FabNews),
     /// The fizz pockets' places and states (#333), when they change; every client computes its sniffer's signal from them.
     Pockets(PocketNews),
+    /// A cargo crate appeared, rests, changed holder, is gone (#332).
+    Crate(crate::cargo_wire::CrateNews),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

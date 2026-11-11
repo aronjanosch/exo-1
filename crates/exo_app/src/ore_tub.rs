@@ -151,15 +151,17 @@ fn tub_step(
     mut ui: ResMut<InventoryUi>,
     mut grab: ResMut<Grab>,
     mut spots: ResMut<TubSpots>,
-    tubs: Query<(Entity, &Crate, &Tub)>,
+    tubs: Query<(Entity, &Crate, &Tub, Option<&crate::crate_net::CrateId>)>,
     ships: Query<(Entity, &Position, &Rotation), With<Ship>>,
+    crate_net: Res<crate::crate_net::CrateNet>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
     mut carried_before: Local<BTreeSet<RackId>>,
 ) {
     let now = time.elapsed_secs_f64();
     let frame = ships.iter().next().map_or(walker_core::Frame::IDENTITY, |(e, p, r)| cabin_frame(e, (p, r), &floors));
     let held = grab.held.map(|h| h.crate_e);
-    spots.0 = tubs.iter().map(|(e, c, t)| TubSpot { rack: t.rack, entity: e, pos: crate_world(c, &frame).0, carried: held == Some(e) }).collect();
+    // Carried: in this process's hands, or in another player's (the host's book, #332).
+    spots.0 = tubs.iter().map(|(e, c, t, id)| TubSpot { rack: t.rack, entity: e, pos: crate_world(c, &frame).0, carried: held == Some(e) || id.is_some_and(|id| crate_net.book.holder(id.0).is_some()) }).collect();
     let carried: BTreeSet<RackId> = spots.0.iter().filter(|s| s.carried).map(|s| s.rack).collect();
     let alive: BTreeSet<RackId> = spots.0.iter().map(|s| s.rack).collect();
     if items.role != Role::Client {
@@ -186,7 +188,7 @@ fn tub_step(
     }
     *carried_before = carried;
     // The load slows the carrier; nothing in the hands (or another crate) costs nothing extra.
-    let load = grab.held.and_then(|h| tubs.get(h.crate_e).ok()).and_then(|(_, _, t)| items.host.racks.get(&t.rack).or_else(|| items.client.racks.get(&t.rack))).map_or(1.0, load_share);
+    let load = grab.held.and_then(|h| tubs.get(h.crate_e).ok()).and_then(|(_, _, t, _)| items.host.racks.get(&t.rack).or_else(|| items.client.racks.get(&t.rack))).map_or(1.0, load_share);
     grab.load_loss = 1.0 - load;
 }
 

@@ -57,8 +57,20 @@ pub(super) fn interior_look_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static
     picture(s, shot_step, "engine-room", [-18.2, -18.2], [-9.3, -14.5], 1.2);
     picture(s, shot_step, "corridor", [-18.5, -9.2], [3.0, -9.2], 1.4);
     picture(s, shot_step, "storage-room", [-1.9, -11.6], [3.4, -15.6], 0.8);
-    picture(s, shot_step, "equipment-room", [4.1, -11.5], [9.8, -8.0], 1.0);
-    picture(s, shot_step, "airlock", [10.4, -10.5], [12.1, -8.8], 1.0);
+    picture(s, shot_step, "equipment-room", [4.1, -8.3], [9.8, -11.4], 1.0);
+    picture(s, shot_step, "airlock", [12.0, -8.9], [10.4, -10.6], 1.0);
+    // Frame time (a window run with `--perf --no-vsync`): the lit corridor seen from its west end, held for a few seconds.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "interior_look: frame time in the lit corridor");
+        }
+        view(w, [-18.5, -9.2], [3.0, -9.2], 1.4);
+        if c.t < 4.0 {
+            return false;
+        }
+        end(w, c, "measured".into());
+        true
+    }));
     // JB-2 blown: the corridor, the storage room and the rest of its part go dark.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {

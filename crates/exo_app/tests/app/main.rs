@@ -63,6 +63,7 @@ mod scenario_space;
 mod scenario_swap;
 mod items_net;
 mod crate_net;
+mod sniffer_net;
 mod session;
 
 #[test]

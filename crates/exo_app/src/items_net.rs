@@ -135,6 +135,9 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                 if let Some(n) = items.fab.news {
                     items.net_out.push(NetOut::Fab { to: Some(slot), n });
                 }
+                if let Some(n) = items.dispatch.news.clone() {
+                    items.net_out.push(NetOut::Dispatch { to: Some(slot), n });
+                }
                 let s = items.public.clone();
                 items.net_out.push(NetOut::Status { to: Some(slot), s });
             }
@@ -167,6 +170,10 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     }
                     Some(ToHost::Fab(a)) => {
                         items.fab.asks.push((slot, a));
+                        true
+                    }
+                    Some(ToHost::Dispatch(a)) => {
+                        items.dispatch.asks.push((slot, a));
                         true
                     }
                     Some(ToHost::Repair(a)) => {
@@ -216,6 +223,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     Some(ToClient::Pockets(n)) => items.dig.pockets = Some(n),
                     Some(ToClient::Fab(n)) => items.fab.news = Some(n),
                     Some(ToClient::Crate(n)) => crate_net.news.push(n),
+                    Some(ToClient::Dispatch(n)) => items.dispatch.news = Some(n),
                     Some(ToClient::RepairDone) | Some(ToClient::RepairRefused) => items.repair_done = true,
                     Some(ToClient::Status(s)) => items.public = s,
                     Some(ToClient::GameOver) => items.game_over_seen = true,
@@ -363,6 +371,12 @@ pub fn items_net_out(
             }
             NetOut::Fab { to, n } => {
                 net.send_reliable(to, &wire::encode(&ToClient::Fab(n)));
+            }
+            NetOut::DispatchAsk(a) => {
+                net.send_reliable(None, &wire::encode(&ToHost::Dispatch(a)));
+            }
+            NetOut::Dispatch { to, n } => {
+                net.send_reliable(to, &wire::encode(&ToClient::Dispatch(n)));
             }
             NetOut::Dig { to, d } => {
                 net.send_reliable(to, &wire::encode(&ToClient::Dig(d)));

@@ -34,6 +34,8 @@ pub enum ToHost {
     Tap(TapAsk),
     /// A cargo crate: ask to hold it, let it go (#332).
     Crate(crate::cargo_wire::CrateAsk),
+    /// The dispatch chute's lever (#334): the host decides whether the order is complete.
+    Dispatch(DispatchAsk),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -62,6 +64,8 @@ pub enum ToClient {
     Pockets(PocketNews),
     /// A cargo crate appeared, rests, changed holder, is gone (#332).
     Crate(crate::cargo_wire::CrateNews),
+    /// The dispatch slate (#334): the order, which lines are met, the face and the counters, when they change.
+    Dispatch(DispatchNews),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -467,6 +471,44 @@ pub struct PocketNews {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FabAsk {
     Push,
+}
+
+/// The dispatch chute's SEND lever (#334).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DispatchAsk {
+    Send,
+}
+
+/// What the dispatch slate shows (#334).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DispatchFace {
+    /// The order and its ticks.
+    #[default]
+    Order,
+    /// A send went through (a couple of seconds).
+    Done,
+    /// A send was refused: the unmet lines blink (a couple of seconds).
+    Missing,
+}
+
+/// One line of the order and whether the chute holds enough of it now.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DispatchLine {
+    pub item: String,
+    pub count: u32,
+    pub met: bool,
+}
+
+/// The dispatch chute as the host has it. `pulls`, `sends` and `refusals` only go up (wrapping): a client moves the
+/// lever and plays the whoosh or the clunk when one rises; `done` is the session's score.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DispatchNews {
+    pub done: u32,
+    pub lines: Vec<DispatchLine>,
+    pub face: DispatchFace,
+    pub pulls: u32,
+    pub sends: u32,
+    pub refusals: u32,
 }
 
 /// What the fabricator's screen says (#326); `recipe` and `left_ds` fill in the words.
@@ -1163,6 +1205,21 @@ mod tests {
                 _ => panic!("the pocket news"),
             };
             assert_eq!(back, news);
+        }
+    }
+
+    #[test]
+    fn the_dispatch_chute_travels_as_it_is() {
+        match decode::<ToHost>(&encode(&ToHost::Dispatch(DispatchAsk::Send))).expect("decodes") {
+            ToHost::Dispatch(a) => assert_eq!(a, DispatchAsk::Send),
+            _ => panic!("the dispatch ask"),
+        }
+        for face in [DispatchFace::Order, DispatchFace::Done, DispatchFace::Missing] {
+            let news = DispatchNews { done: 3, lines: vec![DispatchLine { item: "grumblite".into(), count: 4, met: true }, DispatchLine { item: "fuse".into(), count: 2, met: false }], face, pulls: 5, sends: 3, refusals: u32::MAX };
+            match decode::<ToClient>(&encode(&ToClient::Dispatch(news.clone()))).expect("decodes") {
+                ToClient::Dispatch(n) => assert_eq!(n, news),
+                _ => panic!("the dispatch news"),
+            }
         }
     }
 

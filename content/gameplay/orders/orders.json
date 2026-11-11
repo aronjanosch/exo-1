@@ -1,0 +1,47 @@
+{
+  "_comment": "The dispatch chute's orders (#334). Every tier is a starting value, TODO(initiator). orders_per_tier: how many orders are sent before the next tier; the last tier goes on for ever. A tier's order has `lines` lines (1 to 3), each a different item from `pool` with a count between min and max. max_per_line caps every count.",
+  "orders_per_tier": 2,
+  "max_per_line": 6,
+  "tiers": [
+    {
+      "lines": 1,
+      "pool": [
+        { "item": "grumblite", "min": 3, "max": 4 },
+        { "item": "snoozium", "min": 3, "max": 4 },
+        { "item": "wobble_quartz", "min": 3, "max": 4 }
+      ]
+    },
+    {
+      "lines": 2,
+      "pool": [
+        { "item": "grumblite", "min": 2, "max": 4 },
+        { "item": "snoozium", "min": 2, "max": 4 },
+        { "item": "wobble_quartz", "min": 2, "max": 4 },
+        { "item": "fuse", "min": 1, "max": 2 }
+      ]
+    },
+    {
+      "lines": 2,
+      "pool": [
+        { "item": "fuse", "min": 2, "max": 3 },
+        { "item": "coolant_canister", "min": 1, "max": 2 },
+        { "item": "fizz_jar", "min": 1, "max": 2 },
+        { "item": "grumblite", "min": 4, "max": 6 },
+        { "item": "snoozium", "min": 4, "max": 6 },
+        { "item": "wobble_quartz", "min": 4, "max": 6 }
+      ]
+    },
+    {
+      "lines": 3,
+      "pool": [
+        { "item": "extinguisher", "min": 1, "max": 1 },
+        { "item": "antimatter_canister", "min": 1, "max": 1 },
+        { "item": "fizz_jar", "min": 2, "max": 3 },
+        { "item": "fuse", "min": 2, "max": 4 },
+        { "item": "grumblite", "min": 5, "max": 6 },
+        { "item": "snoozium", "min": 5, "max": 6 },
+        { "item": "wobble_quartz", "min": 5, "max": 6 }
+      ]
+    }
+  ]
+}

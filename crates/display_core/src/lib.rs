@@ -6,6 +6,7 @@ pub mod airlock_panel;
 pub mod engine_panel;
 pub mod canvas;
 pub mod captain;
+pub mod dispatch;
 pub mod fabricator;
 pub mod hud;
 pub mod monitor;

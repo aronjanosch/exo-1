@@ -5,7 +5,7 @@
 //! hidden places are not secret. Seeded with the project's rng, so the same seed gives the same places.
 //! Ground is in area metres (x east, y north), the same frame as `Zone`s in the app.
 use gameplay_core::rng::Rng;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// How many tries a new place gets before the pocket waits (the field may be full).
 const TRIES: usize = 400;
@@ -92,7 +92,7 @@ impl Ground {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PocketState {
     Hidden,
     /// Puffing: seconds until it closes again.
@@ -101,7 +101,7 @@ pub enum PocketState {
     Spent,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Pocket {
     pub at: [f64; 2],
     pub jars_left: u32,
@@ -117,6 +117,14 @@ pub enum Fill {
     Nothing,
     /// One jar's worth; `spent`: that was the last, a new pocket formed.
     Jar { spent: bool },
+}
+
+/// What the save keeps of a field: the places and states, and the generator's state so the places that form
+/// later are the ones the unsaved run would have made.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PocketSave {
+    pub rng: Rng,
+    pub pockets: Vec<Pocket>,
 }
 
 #[derive(Clone, Debug)]
@@ -160,6 +168,38 @@ impl PocketField {
             }
         }
         None
+    }
+
+    pub fn saved(&self) -> PocketSave {
+        PocketSave { rng: self.rng.clone(), pockets: self.pockets.clone() }
+    }
+
+    /// Takes a saved field over. Refused (false, the field untouched) when it does not fit this config and ground:
+    /// another number of pockets, a place that is not finite or no longer free, or more jars than a pocket holds.
+    /// Timers are clamped into their ranges.
+    pub fn restore(&mut self, saved: PocketSave) -> bool {
+        let c = &self.cfg;
+        let fits = saved.pockets.len() == c.pockets as usize
+            && saved.pockets.iter().all(|p| {
+                p.at.iter().all(|x| x.is_finite())
+                    && self.ground.is_free(p.at, c.margin_m)
+                    && p.jars_left <= c.jars
+                    && p.tap.is_finite()
+                    && !matches!(p.state, PocketState::Open { left_s } if !left_s.is_finite())
+            });
+        if !fits {
+            return false;
+        }
+        let (tap_s, open_s) = (c.tap_s, c.open_s);
+        self.rng = saved.rng;
+        self.pockets = saved.pockets;
+        for p in &mut self.pockets {
+            p.tap = p.tap.clamp(0.0, tap_s);
+            if let PocketState::Open { left_s } = &mut p.state {
+                *left_s = left_s.min(open_s);
+            }
+        }
+        true
     }
 
     pub fn pockets(&self) -> &[Pocket] {
@@ -285,6 +325,39 @@ mod tests {
         f.pockets.truncate(1);
         f.pockets[0].at = at;
         f
+    }
+
+    #[test]
+    fn a_saved_field_comes_back_and_goes_on_the_same() {
+        let (c, g) = (cfg(), ground());
+        let mut a = PocketField::new(&c, g.clone(), 5);
+        let at = a.pockets()[0].at;
+        a.step(c.tap_s + 0.1, &[at]);
+        assert!(matches!(a.pockets()[0].state, PocketState::Open { .. }));
+        a.fill(0);
+        a.step(1.0, &[]);
+        let saved = a.saved();
+        let mut b = PocketField::new(&c, g.clone(), 99);
+        assert!(b.restore(saved));
+        assert_eq!(b.pockets(), a.pockets());
+        // Spend the open one on both: the successor lands on the same place.
+        for f in [&mut a, &mut b] {
+            f.fill(0);
+            f.fill(0);
+        }
+        assert_eq!(b.pockets(), a.pockets());
+        // A save that does not fit is refused and changes nothing.
+        let before = b.pockets().to_vec();
+        let mut bad = a.saved();
+        bad.pockets.pop();
+        assert!(!b.restore(bad));
+        let mut bad = a.saved();
+        bad.pockets[0].at = [0.0, 0.0];
+        assert!(!b.restore(bad), "inside a blocked rect");
+        let mut bad = a.saved();
+        bad.pockets[1].tap = f64::NAN;
+        assert!(!b.restore(bad));
+        assert_eq!(b.pockets(), &before[..]);
     }
 
     #[test]

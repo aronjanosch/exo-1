@@ -17,7 +17,8 @@ use crate::items::{Items, Role};
 use crate::walker::{Player, EYE_HEIGHT};
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use dig_core::pocket::{signal_at, Ground, PocketField, PocketState, Rect};
+use dig_core::pocket::{signal_at, Ground, PocketField, PocketSave, PocketState, Rect};
+use gameplay_core::save::{Envelope, SaveError};
 use dig_core::DigConfig;
 use display_core::hud::{PromptKind, PromptView};
 use display_core::Tone;
@@ -308,8 +309,45 @@ fn vent_hint(planet: Res<PlanetRes>, area: Option<Res<DevArea>>, cfg: Res<Pocket
     inter.at = Some(p);
 }
 
+// ---------- save ----------
+
+pub const SECTION: &str = "fizz_pockets";
+pub const VERSION: u32 = 1;
+
+pub fn save_section(host: &PocketHost, env: &mut Envelope) {
+    env.put(SECTION, VERSION, &host.field.saved());
+}
+
+/// Reads the section (read first: a refused section changes nothing). An older save has none.
+pub fn read_section(env: &Envelope) -> Result<Option<PocketSave>, SaveError> {
+    env.get::<PocketSave>(SECTION, VERSION)
+}
+
+/// No section, or one that no longer fits the config and ground: the field starts fresh from the seed, so a
+/// load does not carry the running session's pockets over. Held taps are forgotten.
+pub fn apply_section(host: &mut PocketHost, cfg: &DigConfig, saved: Option<PocketSave>) {
+    if !saved.is_some_and(|s| host.field.restore(s)) {
+        host.field = PocketField::new(&cfg.pocket, ground(cfg), SEED);
+    }
+    host.tappers.clear();
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_pockets_section_reads_back_and_a_bad_one_is_refused() {
+        let cfg = DigConfig::load(&crate::content_files("gameplay")).unwrap();
+        let field = PocketField::new(&cfg.pocket, ground(&cfg), SEED);
+        let mut env = Envelope::new();
+        assert_eq!(read_section(&env).unwrap(), None, "an older save has no section");
+        env.put(SECTION, VERSION, &field.saved());
+        let back = read_section(&Envelope::from_json(&env.to_json()).unwrap()).unwrap();
+        assert_eq!(back, Some(field.saved()));
+        let mut bad = Envelope::new();
+        bad.put(SECTION, VERSION + 1, &0u32);
+        assert!(read_section(&bad).is_err());
+    }
     use super::*;
     use crate::dev_area::layout;
 

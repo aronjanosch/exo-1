@@ -16,6 +16,7 @@ use bevy::prelude::*;
 use dig_core::{ray_box, DigConfig, Vein};
 use display_core::hud::{PromptKind, PromptView};
 use display_core::Tone;
+use gameplay_core::save::{Envelope, SaveError};
 use item_core::wire::{CutAsk, DigNews, VeinNew};
 use item_core::{FrameRef, Placement, PlayerId};
 use std::collections::BTreeMap;
@@ -259,8 +260,46 @@ fn dig_hint(planet: Res<PlanetRes>, area: Option<Res<DevArea>>, cfg: Res<DigCfg>
     inter.at = Some(p);
 }
 
+// ---------- save ----------
+
+pub const SECTION: &str = "dig_veins";
+pub const VERSION: u32 = 1;
+
+pub fn save_section(st: &DigState, env: &mut Envelope) {
+    env.put(SECTION, VERSION, &st.veins);
+}
+
+/// Reads the section (read first: a refused section changes nothing). An older save has none.
+pub fn read_section(env: &Envelope) -> Result<Option<Vec<Vein>>, SaveError> {
+    env.get::<Vec<Vein>>(SECTION, VERSION)
+}
+
+/// No section, or one that no longer fits the config: fresh veins, so a load does not carry the running
+/// session's cuts over. Whoever was cutting stops.
+pub fn apply_section(st: &mut DigState, cfg: &DigConfig, saved: Option<Vec<Vein>>) {
+    st.veins = saved
+        .and_then(|v| dig_core::restore_veins(cfg, v))
+        .unwrap_or_else(|| cfg.veins.iter().map(|v| Vein::new(&v.ore, cfg)).collect());
+    st.cutters.clear();
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_veins_section_reads_back_and_a_bad_one_is_refused() {
+        let mut env = Envelope::new();
+        assert_eq!(read_section(&env).unwrap(), None, "an older save has no section");
+        env.put(SECTION, VERSION, &vec![Vein { ore: "grumblite".into(), chunks_left: 3, heat: 0.5, regrow: 0.0 }]);
+        let back = read_section(&Envelope::from_json(&env.to_json()).unwrap()).unwrap().unwrap();
+        assert_eq!(back[0].chunks_left, 3);
+        let mut bad = Envelope::new();
+        bad.put(SECTION, VERSION + 1, &0u32);
+        assert!(read_section(&bad).is_err());
+        let mut bad = Envelope::new();
+        bad.put(SECTION, VERSION, &vec![1, 2]);
+        assert!(read_section(&bad).is_err());
+    }
     use super::*;
 
     #[test]

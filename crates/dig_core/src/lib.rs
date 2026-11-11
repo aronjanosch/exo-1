@@ -2,7 +2,7 @@
 //! a chunk comes off at full heat, the spot cools when the cut is let go, an emptied vein grows back
 //! after a while. No Bevy types; the host steps it, clients only read its state.
 use content_core::{parse_strict, File};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub mod pocket;
 pub use pocket::PocketConfig;
@@ -57,8 +57,8 @@ impl DigConfig {
     }
 }
 
-/// One vein as the host runs it.
-#[derive(Clone, Debug, PartialEq)]
+/// One vein as the host runs it (and as the save keeps it).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Vein {
     pub ore: String,
     pub chunks_left: u32,
@@ -110,6 +110,26 @@ impl Vein {
     }
 }
 
+/// Checks veins read from a save against the config: the same count and ores in the same order, finite
+/// values; heat and the regrow timer are clamped into their ranges. None when they do not fit (a config
+/// that changed since the save): the caller then keeps the fresh veins.
+pub fn restore_veins(cfg: &DigConfig, saved: Vec<Vein>) -> Option<Vec<Vein>> {
+    if saved.len() != cfg.veins.len() || saved.iter().zip(&cfg.veins).any(|(s, v)| s.ore != v.ore) {
+        return None;
+    }
+    saved
+        .into_iter()
+        .map(|mut v| {
+            if v.chunks_left > cfg.chunks || !v.heat.is_finite() || !v.regrow.is_finite() {
+                return None;
+            }
+            v.heat = v.heat.clamp(0.0, 1.0);
+            v.regrow = v.regrow.max(0.0);
+            Some(v)
+        })
+        .collect()
+}
+
 /// Where a ray first meets an axis-aligned box: the distance along `dir` (a unit vector), 0 when the
 /// origin is inside, None when it misses or the box lies behind. The slab test, in whatever frame
 /// the three arrays share.
@@ -139,6 +159,26 @@ pub fn ray_box(origin: [f64; 3], dir: [f64; 3], centre: [f64; 3], half: [f64; 3]
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_saved_vein_state_comes_back_and_a_bad_save_is_refused() {
+        let cfg = DigConfig::parse(include_str!("../../../content/gameplay/dig/dig.json")).unwrap();
+        let mut veins: Vec<Vein> = cfg.veins.iter().map(|v| Vein::new(&v.ore, &cfg)).collect();
+        veins[0].step(&cfg, cfg.cut_s * 0.5, true);
+        veins[1].chunks_left = 0;
+        veins[1].regrow = 1.5;
+        assert_eq!(restore_veins(&cfg, veins.clone()), Some(veins.clone()));
+        assert_eq!(restore_veins(&cfg, veins[..1].to_vec()), None, "another number of veins");
+        let mut bad = veins.clone();
+        bad[0].chunks_left = cfg.chunks + 1;
+        assert_eq!(restore_veins(&cfg, bad), None);
+        let mut bad = veins.clone();
+        bad[0].heat = f64::NAN;
+        assert_eq!(restore_veins(&cfg, bad), None);
+        let mut wild = veins;
+        wild[0].heat = 7.0;
+        assert_eq!(restore_veins(&cfg, wild).unwrap()[0].heat, 1.0);
+    }
 
     #[test]
     fn a_ray_hits_a_box_in_front_and_misses_beside_and_behind_it() {

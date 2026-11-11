@@ -23,8 +23,8 @@ fn step(ship: &mut ScShip, body: &mut BodyState, i: &FlightInput, c: &ModeCmds, 
 #[test]
 fn a3_the_cap_refuses_thrust_above_it() {
     let space = Space::default();
-    // Decoupled, so nothing damps the thrust along the stick and the cap is what holds the speed
-    // (coupled, the goal already sits inside the cap). D to the sideways cap, then decouple and
+    // Each decoupled axis has its own cap: existing sideways drift must not consume
+    // the forward allowance. Hold long enough to actually reach the forward cap.
     let peak = |refuse: bool| {
         let mut t = tuning();
         t.linear.refuse_thrust = refuse;
@@ -33,10 +33,10 @@ fn a3_the_cap_refuses_thrust_above_it() {
         let mut body = body_at(DVec3::ZERO);
         fly(&mut ship, &mut body, &thrust(DVec3::X), &ModeCmds::default(), &space, 8.0);
         let mut peak: f64 = 0.0;
-        for i in 0..(3.0 / DT) as usize {
+        for i in 0..(12.0 / DT) as usize {
             let c = if i == 0 { ModeCmds { decoupled: true, ..Default::default() } } else { ModeCmds::default() };
             step(&mut ship, &mut body, &input(DVec3::NEG_Z, true, false), &c, &space);
-            peak = peak.max(body.lin_vel.length());
+            peak = peak.max(-body.lin_vel.z);
         }
         peak
     };

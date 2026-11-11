@@ -175,6 +175,12 @@ fn side(b: &Dirs, axis: usize, positive: bool) -> f64 {
 }
 
 pub fn shape(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> Given {
+    let linear = shape_linear(s, a, t, dt);
+    let angular = shape_angular(s, a.angular, t, dt);
+    Given { linear, angular }
+}
+
+pub(super) fn shape_linear(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> DVec3 {
     // Countering: pushing against the velocity on an axis gets the share of the aligned boost,
     // faded in with the boost's strength (unboosted: the plain box).
     let b = a.boost.clamp(0.0, 1.0);
@@ -244,9 +250,12 @@ pub fn shape(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> Given {
         grp.value = if goal.abs() <= base.abs() { goal } else { base + (goal - base) * k };
     }
     let g = &s.groups;
-    let linear = DVec3::new(g[LATERAL].value, g[VERTICAL].value, g[MAIN].value + g[RETRO].value);
+    DVec3::new(g[LATERAL].value, g[VERTICAL].value, g[MAIN].value + g[RETRO].value)
+}
+
+pub(super) fn shape_angular(s: &mut DriveState, angular: DVec3, t: &DriveTuning, dt: f64) -> DVec3 {
     let aj = [t.angular_jerk.pitch, t.angular_jerk.yaw, t.angular_jerk.roll];
-    let asked = a.angular.to_array();
+    let asked = angular.to_array();
     let mut ang = s.angular.to_array();
     let mut k: f64 = 1.0;
     for i in 0..3 {
@@ -261,5 +270,5 @@ pub fn shape(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> Given {
         ang[i] = if asked[i].abs() <= base.abs() { asked[i] } else { base + (asked[i] - base) * k };
     }
     s.angular = DVec3::from_array(ang);
-    Given { linear, angular: s.angular }
+    s.angular
 }

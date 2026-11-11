@@ -137,6 +137,8 @@ pub struct Net {
     new_peers: Vec<u32>,
     left_peers: Vec<u32>,
     bodies_in: Vec<BodyDatagram>,
+    /// Host: poses of the crates the clients carry (#332), with the slot they came from.
+    peer_bodies: Vec<(u32, BodyDatagram)>,
     body_seq: u32,
 }
 
@@ -215,6 +217,7 @@ impl Net {
             new_peers: Vec::new(),
             left_peers: Vec::new(),
             bodies_in: Vec::new(),
+            peer_bodies: Vec::new(),
             body_seq: 0,
         })
     }
@@ -313,6 +316,15 @@ impl Net {
                     self.send(&out, a);
                 }
                 self.ingest(s, now);
+            }
+            Packet::Bodies(d) => {
+                let Some(slot) = self.peers.iter().find(|(_, p)| p.addr == from).map(|(k, _)| *k) else {
+                    self.st.invalid += 1;
+                    return;
+                };
+                if self.peer_bodies.len() < 256 {
+                    self.peer_bodies.push((slot, d));
+                }
             }
             Packet::Bye { slot } => {
                 if self.peers.get(&(slot as u32)).is_some_and(|p| p.addr == from) {
@@ -420,6 +432,22 @@ impl Net {
                 self.st.bodies_tx += 1;
             }
         }
+    }
+
+    /// Client: the poses of the crates this client carries, to the host (#332).
+    pub fn send_bodies_to_host(&mut self, t: f64, bodies: Vec<net_core::loose::BodyState>) {
+        let Some(host) = self.host_addr.filter(|_| !self.cfg.host && self.ready) else { return };
+        for chunk in bodies.chunks(net_core::loose::MAX_BODIES) {
+            self.body_seq += 1;
+            let bytes = Packet::Bodies(BodyDatagram { t, seq: self.body_seq, bodies: chunk.to_vec() }).encode();
+            self.send(&bytes, host);
+            self.st.bodies_tx += 1;
+        }
+    }
+
+    /// Host: the crate poses the clients sent, by slot.
+    pub fn take_peer_bodies(&mut self) -> Vec<(u32, BodyDatagram)> {
+        std::mem::take(&mut self.peer_bodies)
     }
 
     pub fn take_bodies(&mut self) -> Vec<BodyDatagram> {

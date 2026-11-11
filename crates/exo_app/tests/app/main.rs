@@ -59,6 +59,7 @@ mod scenario_slope_landing;
 mod scenario_space;
 mod scenario_swap;
 mod items_net;
+mod crate_net;
 mod session;
 
 #[test]

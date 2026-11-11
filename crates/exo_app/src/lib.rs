@@ -34,6 +34,7 @@ pub mod net_live;
 pub mod health;
 pub mod health_view;
 pub mod items_net;
+pub mod crate_net;
 pub mod ore_tub;
 pub mod notices;
 pub mod origin;
@@ -391,6 +392,7 @@ pub fn build_app(o: &Options) -> App {
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, avian_crates::plugin, cargo::plugin, hud::plugin, net_live::plugin));
     app.add_plugins(ore_tub::plugin);
+    app.add_plugins(crate_net::plugin);
     app.add_plugins((gameplay::plugin, town::plugin, displays::plugin, items::plugin, container_window::plugin, crew_hud::plugin, items_net::plugin, health::plugin, repair::plugin, public_status::plugin, health_view::plugin, gameover::plugin, hand_lamp::plugin));
     if o.warm_reactor {
         app.insert_resource(dev_area::ship::WarmAtCreation);

@@ -81,7 +81,7 @@ impl RemoteBodies {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net>, mut items: ResMut<Items>, mut bodies: ResMut<RemoteBodies>, loose: Query<Entity, With<LooseItem>>, mut repairs: Option<ResMut<RepairSessions>>, mut sprays: Option<ResMut<Sprays>>, mut health: Option<ResMut<HealthState>>) {
+pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net>, mut crate_net: ResMut<crate::crate_net::CrateNet>, mut items: ResMut<Items>, mut bodies: ResMut<RemoteBodies>, loose: Query<Entity, With<LooseItem>>, mut repairs: Option<ResMut<RepairSessions>>, mut sprays: Option<ResMut<Sprays>>, mut health: Option<ResMut<HealthState>>) {
     let now = time.elapsed_secs_f64();
     if items.role == Role::Local {
         items.role = if net.cfg.host { Role::Host } else { Role::Client };
@@ -100,6 +100,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
     match items.role {
         Role::Host => {
             for slot in net.take_left_peers() {
+                crate_net.left_peers.push(slot);
                 items.note_using(slot, None);
                 items.release_locks(now, slot);
                 items.dig.asks.push((slot, item_core::wire::CutAsk::Stop));
@@ -114,6 +115,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                 }
             }
             for slot in net.take_new_peers() {
+                crate_net.new_peers.push(slot);
                 items.send_state(slot);
                 let r = items.room;
                 items.net_out.push(NetOut::Room { to: Some(slot), r });
@@ -149,6 +151,10 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     }
                     Some(ToHost::Cut(a)) => {
                         items.dig.asks.push((slot, a));
+                        true
+                    }
+                    Some(ToHost::Crate(a)) => {
+                        crate_net.asks.push((slot, a));
                         true
                     }
                     Some(ToHost::Fab(a)) => {
@@ -200,6 +206,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     Some(ToClient::Fire(f)) => items.fire = Some(f),
                     Some(ToClient::Dig(d)) => items.dig.news = Some(d),
                     Some(ToClient::Fab(n)) => items.fab.news = Some(n),
+                    Some(ToClient::Crate(n)) => crate_net.news.push(n),
                     Some(ToClient::RepairDone) | Some(ToClient::RepairRefused) => items.repair_done = true,
                     Some(ToClient::Status(s)) => items.public = s,
                     Some(ToClient::GameOver) => items.game_over_seen = true,

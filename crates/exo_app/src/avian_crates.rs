@@ -54,7 +54,7 @@ const IMPACT_SETTLED: f64 = 0.3;
 /// the edge does not flip every tick.
 const RAMP_MARGIN: f64 = 0.4;
 
-type BodyParts = (AvianCrate, RigidBody, Collider, ColliderDensity, LinearVelocity, AngularVelocity, CollisionLayers, Friction, Restitution, SweptCcd);
+pub(crate) type BodyParts = (AvianCrate, RigidBody, Collider, ColliderDensity, LinearVelocity, AngularVelocity, CollisionLayers, Friction, Restitution, SweptCcd);
 
 /// True if a crate centre `p` (ship space) is on, over or at the ramp (the wedge of `add_hull`) or
 /// at the cabin's open end, within `margin` of it; `r` is the crate's largest half extent.

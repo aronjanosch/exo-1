@@ -601,13 +601,18 @@ pub fn budget_step(
     planet: Res<PlanetRes>,
     budget: Res<ObjectBudget>,
     grab: Res<crate::grab::Grab>,
+    items: Res<crate::items::Items>,
     mut stats: ResMut<CargoStats>,
     players: Query<&crate::walker::Player>,
     ships: Query<(Entity, &Position, &Rotation), With<Ship>>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
-    mut crates: Query<(Entity, &mut Crate)>,
+    mut crates: Query<(Entity, &mut Crate, Has<crate::items_net::LooseView>)>,
     tubs: Query<(), With<crate::ore_tub::Tub>>,
 ) {
+    // A client's crates are the host's pictures: the host's budget decides (#332).
+    if items.role == crate::items::Role::Client {
+        return;
+    }
     let now = time.elapsed_secs_f64();
     let Some((ship_e, sp, sr)) = ships.iter().next() else { return };
     let frame = cabin_frame(ship_e, (sp, sr), &floors);
@@ -615,13 +620,13 @@ pub fn budget_step(
     let held = grab.held.map(|h| h.crate_e);
     let objs: Vec<grab_core::budget::Obj> = crates
         .iter_mut()
-        .map(|(e, mut c)| {
+        .map(|(e, mut c, view)| {
             let touched = *c.touched.get_or_insert(now);
             let (pos, _) = crate_world(&c, &frame);
             grab_core::budget::Obj {
                 id: e.to_bits(),
                 // An ore tub carries a load that is saved with it: it never goes (#327).
-                protected: held == Some(e) || c.locked || c.ship.is_some() || c.item || tubs.contains(e),
+                protected: held == Some(e) || c.locked || c.ship.is_some() || c.item || tubs.contains(e) || view,
                 idle: now - touched,
                 distance: pos.distance(walker).min(pos.distance(sp.0)),
                 resting: c.body.asleep,

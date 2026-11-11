@@ -42,6 +42,7 @@ mod dig;
 mod fabricator;
 mod sniffer;
 mod ore_tub;
+mod orders;
 mod repair;
 mod reactor;
 mod health;
@@ -660,6 +661,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "fabricator" => fabricator::fabricator_steps(&mut s, &shot_step),
         "sniffer" => sniffer::sniffer_steps(&mut s, &shot_step),
         "ore_tub" => ore_tub::ore_tub_steps(&mut s, &shot_step),
+        "orders" => orders::orders_steps(&mut s, &shot_step),
         "repair" => repair::repair_steps(&mut s),
         "savefile" => savefile::savefile_steps(&mut s),
         "licence" => licence::licence_steps(&mut s),

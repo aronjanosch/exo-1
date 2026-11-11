@@ -32,6 +32,7 @@ mod scenario_dev_area;
 mod scenario_items;
 mod scenario_dev_menu;
 mod scenario_dig;
+mod scenario_dig_save;
 mod scenario_fabricator;
 mod scenario_sniffer;
 mod scenario_ore_tub;

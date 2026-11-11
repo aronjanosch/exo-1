@@ -17,7 +17,8 @@ use crate::items::{Items, Role};
 use crate::walker::{Player, EYE_HEIGHT};
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use dig_core::pocket::{signal_at, Ground, PocketField, PocketState, Rect};
+use dig_core::pocket::{signal_at, Ground, PocketField, PocketSave, PocketState, Rect};
+use gameplay_core::save::{Envelope, SaveError};
 use dig_core::DigConfig;
 use display_core::hud::{PromptKind, PromptView};
 use display_core::Tone;
@@ -306,6 +307,29 @@ fn vent_hint(planet: Res<PlanetRes>, area: Option<Res<DevArea>>, cfg: Res<Pocket
     }
     inter.view = view;
     inter.at = Some(p);
+}
+
+// ---------- save ----------
+
+pub const SECTION: &str = "fizz_pockets";
+pub const VERSION: u32 = 1;
+
+pub fn save_section(host: &PocketHost, env: &mut Envelope) {
+    env.put(SECTION, VERSION, &host.field.saved());
+}
+
+/// Reads the section (read first: a refused section changes nothing). An older save has none.
+pub fn read_section(env: &Envelope) -> Result<Option<PocketSave>, SaveError> {
+    env.get::<PocketSave>(SECTION, VERSION)
+}
+
+/// No section, or one that no longer fits the config and ground: the field starts fresh from the seed, so a
+/// load does not carry the running session's pockets over. Held taps are forgotten.
+pub fn apply_section(host: &mut PocketHost, cfg: &DigConfig, saved: Option<PocketSave>) {
+    if !saved.is_some_and(|s| host.field.restore(s)) {
+        host.field = PocketField::new(&cfg.pocket, ground(cfg), SEED);
+    }
+    host.tappers.clear();
 }
 
 #[cfg(test)]

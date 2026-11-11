@@ -16,6 +16,7 @@ use bevy::prelude::*;
 use dig_core::{ray_box, DigConfig, Vein};
 use display_core::hud::{PromptKind, PromptView};
 use display_core::Tone;
+use gameplay_core::save::{Envelope, SaveError};
 use item_core::wire::{CutAsk, DigNews, VeinNew};
 use item_core::{FrameRef, Placement, PlayerId};
 use std::collections::BTreeMap;
@@ -257,6 +258,29 @@ fn dig_hint(planet: Res<PlanetRes>, area: Option<Res<DevArea>>, cfg: Res<DigCfg>
     inter.prompt = format!("[LMB] {}", if welder { format!("hold to cut: {name}") } else { format!("{name}: a welder is needed") });
     inter.view = view;
     inter.at = Some(p);
+}
+
+// ---------- save ----------
+
+pub const SECTION: &str = "dig_veins";
+pub const VERSION: u32 = 1;
+
+pub fn save_section(st: &DigState, env: &mut Envelope) {
+    env.put(SECTION, VERSION, &st.veins);
+}
+
+/// Reads the section (read first: a refused section changes nothing). An older save has none.
+pub fn read_section(env: &Envelope) -> Result<Option<Vec<Vein>>, SaveError> {
+    env.get::<Vec<Vein>>(SECTION, VERSION)
+}
+
+/// No section, or one that no longer fits the config: fresh veins, so a load does not carry the running
+/// session's cuts over. Whoever was cutting stops.
+pub fn apply_section(st: &mut DigState, cfg: &DigConfig, saved: Option<Vec<Vein>>) {
+    st.veins = saved
+        .and_then(|v| dig_core::restore_veins(cfg, v))
+        .unwrap_or_else(|| cfg.veins.iter().map(|v| Vein::new(&v.ore, cfg)).collect());
+    st.cutters.clear();
 }
 
 #[cfg(test)]

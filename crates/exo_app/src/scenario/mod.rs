@@ -40,6 +40,7 @@ mod fire;
 mod fire_grid;
 mod extinguisher;
 mod dig;
+mod dig_save;
 mod fabricator;
 mod sniffer;
 mod ore_tub;
@@ -660,6 +661,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "fire_grid" => fire_grid::fire_grid_steps(&mut s),
         "extinguisher" => extinguisher::extinguisher_steps(&mut s),
         "dig" => dig::dig_steps(&mut s, &shot_step),
+        "dig_save" => dig_save::dig_save_steps(&mut s),
         "fabricator" => fabricator::fabricator_steps(&mut s, &shot_step),
         "sniffer" => sniffer::sniffer_steps(&mut s, &shot_step),
         "ore_tub" => ore_tub::ore_tub_steps(&mut s, &shot_step),

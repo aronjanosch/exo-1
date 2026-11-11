@@ -145,6 +145,12 @@ pub fn save_now(world: &mut World) -> Result<(), String> {
     if let Some(d) = world.get_resource::<crate::dev_area::dispatch::DispatchState>() {
         crate::dev_area::dispatch::save_section(d, &mut env);
     }
+    if let Some(d) = world.get_resource::<crate::dev_area::dig::DigState>() {
+        crate::dev_area::dig::save_section(d, &mut env);
+    }
+    if let Some(p) = world.get_resource::<crate::dev_area::sniffer::PocketHost>() {
+        crate::dev_area::sniffer::save_section(p, &mut env);
+    }
     let dir = world.resource::<SaveDir>().0.clone();
     write_slot(&dir, SLOT, &env.to_json()).map_err(|e| format!("save: {}: {e}", dir.display()))?;
     world.resource_mut::<Gameplay>().save_wanted = false;
@@ -186,6 +192,8 @@ pub fn load(world: &mut World, env: &Envelope) -> Result<(), SaveError> {
     let engine = EngineSave::load(env)?;
     let tubs = crate::ore_tub::read_section(env)?;
     let dispatch = crate::dev_area::dispatch::read_section(env)?;
+    let veins = crate::dev_area::dig::read_section(env)?;
+    let pockets = crate::dev_area::sniffer::read_section(env)?;
     let saved = WorldSave::load(env)?.unwrap_or_default();
     world.resource_mut::<Gameplay>().restore(env, saved.next_crate)?;
     if let (Some(sec), Some(cfg)) = (engine, world.get_resource::<ReactorConfig>().map(|c| c.0.clone())) {
@@ -203,6 +211,16 @@ pub fn load(world: &mut World, env: &Envelope) -> Result<(), SaveError> {
         && let Some(mut st) = world.get_resource_mut::<crate::dev_area::dispatch::DispatchState>()
     {
         crate::dev_area::dispatch::apply_section(&mut st, &cfg, dispatch);
+    }
+    if let Some(cfg) = world.get_resource::<crate::dev_area::dig::DigCfg>().map(|c| c.0.clone())
+        && let Some(mut st) = world.get_resource_mut::<crate::dev_area::dig::DigState>()
+    {
+        crate::dev_area::dig::apply_section(&mut st, &cfg, veins);
+    }
+    if let Some(cfg) = world.get_resource::<crate::dev_area::sniffer::PocketCfg>().map(|c| c.0.clone())
+        && let Some(mut host) = world.get_resource_mut::<crate::dev_area::sniffer::PocketHost>()
+    {
+        crate::dev_area::sniffer::apply_section(&mut host, &cfg, pockets);
     }
     let old: Vec<Entity> = world.query_filtered::<Entity, With<Goods>>().iter(world).collect();
     for e in old {

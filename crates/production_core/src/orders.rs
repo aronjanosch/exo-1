@@ -216,10 +216,6 @@ mod tests {
         OrderConfig::parse(include_str!("../../../content/gameplay/orders/orders.json")).unwrap()
     }
 
-    fn load(lines: &[(&str, u32)]) -> Vec<Amount> {
-        lines.iter().map(|(i, n)| Amount::new(i, *n)).collect()
-    }
-
     fn sequence(seed: u64, n: usize) -> Vec<Order> {
         let c = cfg();
         let mut b = OrderBook::new(&c, seed);

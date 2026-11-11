@@ -3,6 +3,7 @@
 //! (`docs/research/crew-ship/grab-and-cargo.md` in the concept repo); our own implementation and numbers.
 //! All values are starting points for the playtest (`TODO(initiator)` in the data).
 pub mod budget;
+pub mod holders;
 
 use glam::{DMat3, DQuat, DVec3};
 use serde::Deserialize;

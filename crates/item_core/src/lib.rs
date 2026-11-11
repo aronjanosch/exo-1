@@ -5,6 +5,7 @@ pub mod container;
 pub mod defs;
 pub mod inventory;
 pub mod supply;
+pub mod cargo_wire;
 pub mod wire;
 
 pub use authority::{Action, Client, Event, FrameRef, Host, Loose, LooseId, Placement, PlayerId, Reject, Request};

@@ -30,6 +30,8 @@ pub enum ToHost {
     Cut(CutAsk),
     /// The fabricator's button (#326): the host decides whether it starts.
     Fab(FabAsk),
+    /// A cargo crate: ask to hold it, let it go (#332).
+    Crate(crate::cargo_wire::CrateAsk),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -54,6 +56,8 @@ pub enum ToClient {
     Dig(DigNews),
     /// The fabricator's screen and glow (#326), when its state changes.
     Fab(FabNews),
+    /// A cargo crate appeared, rests, changed holder, is gone (#332).
+    Crate(crate::cargo_wire::CrateNews),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

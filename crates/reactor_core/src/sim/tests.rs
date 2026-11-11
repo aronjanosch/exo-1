@@ -396,3 +396,68 @@ fn eject_in_time() {
     assert!(r.ejected() && r.canisters().is_empty() && !r.power_on());
     assert_eq!(trace.last().unwrap().heat, 0.0);
 }
+
+/// Seconds a full tank lasts with the reactor held on `input` (None when it never empties within `limit_s`);
+/// the tank only ever goes down, stays finite and never goes below 0.
+fn seconds_to_empty(mut room: EngineRoom, input: Input, limit_s: f64) -> Option<f64> {
+    room.pump_mut().set_tank(100.0);
+    let (mut s, mut last) = (0.0, 100.0);
+    while s < limit_s {
+        room.step(DT, input);
+        s += DT;
+        let tank = room.pump().tank();
+        assert!(tank.is_finite() && tank >= 0.0 && tank <= last, "the tank only goes down to 0 ({last} -> {tank})");
+        if tank == 0.0 {
+            return Some(s);
+        }
+        last = tank;
+    }
+    None
+}
+
+/// The tank runs down while the pump runs and reaches 0 (the hand refill's reason): faster the hotter the core runs.
+/// Not pinned to numbers; the minutes are printed for the tuning (`--nocapture`).
+#[test]
+fn the_coolant_tank_drains_to_empty_and_faster_when_hot() {
+    let t = shipped();
+    let normal = seconds_to_empty(warm_room(&t, 1), Input::auto(), 3600.0).expect("a full tank empties within an hour at normal load");
+    // Critical heat does not last (the core implodes or is thrown out), so the minutes come from the rate over the first second (the pump's stream falls as the grid sags, so the rate drops a little after).
+    let mut hot = warm_room(&t, 1);
+    hot.pump_mut().set_tank(100.0);
+    assert!(hot.make_critical(0.0));
+    for _ in 0..10 {
+        hot.step(DT, Input::manual(100.0, 30.0));
+    }
+    let drop = 100.0 - hot.pump().tank();
+    assert!(drop > 0.0, "the tank drains at critical heat");
+    let critical = 100.0 / (drop / 1.0);
+    eprintln!("tank empty after {:.1} min at normal Auto load, {:.1} min at critical heat", normal / 60.0, critical / 60.0);
+    assert!(critical < normal, "hotter drains faster ({critical} vs {normal})");
+}
+
+/// A dry tank is no flow, and the core heats up on Auto (the sim's rule, `coolant_empty` script).
+#[test]
+fn a_dry_tank_is_no_flow_and_the_core_climbs() {
+    let mut room = warm_room(&shipped(), 1);
+    let before = room.reactor().heat();
+    room.pump_mut().set_tank(0.0);
+    for _ in 0..300 {
+        room.step(DT, Input::auto());
+    }
+    assert_eq!(room.flow(), 0.0);
+    assert!(room.reactor().heat() > before, "{before} -> {}", room.reactor().heat());
+}
+
+/// A canister adds its share and no more than the tank holds; a full tank takes nothing (the glue gives the canister back on 0).
+#[test]
+fn a_refill_is_capped_and_a_full_tank_takes_nothing() {
+    let mut room = warm_room(&shipped(), 1);
+    let share = shipped().room.coolant_canister;
+    room.pump_mut().set_tank(30.0);
+    assert!((room.pump_mut().refill(share) - share).abs() < 1e-9 && (room.pump().tank() - (30.0 + share)).abs() < 1e-9);
+    room.pump_mut().set_tank(80.0);
+    assert!((room.pump_mut().refill(share) - 20.0).abs() < 1e-9, "only the room left is taken");
+    assert_eq!(room.pump().tank(), 100.0);
+    assert_eq!(room.pump_mut().refill(share), 0.0, "full: nothing added");
+    assert_eq!(room.pump().tank(), 100.0);
+}

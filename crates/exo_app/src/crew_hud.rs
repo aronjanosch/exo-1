@@ -1035,6 +1035,7 @@ fn update_reticle(
     hold: Res<UseHold>,
     rescue: Res<crate::rescue::RescueHold>,
     mask: Res<crate::dev_area::gear::MaskHold>,
+    coolant: Res<crate::dev_area::engineering::coolant_tank::CoolantHold>,
     look: Res<DisplayLook>,
     players: Query<&Player>,
     mut nodes: Query<(&ReticlePart, &mut Node)>,
@@ -1042,7 +1043,7 @@ fn update_reticle(
 ) {
     let seated = players.single().is_ok_and(|p| p.seated);
     let usable = inter.target.is_some() && inter.kind != PromptKind::Blocked;
-    let progress = hold.progress().or(rescue.progress()).or(mask.progress()).filter(|p| *p > 0.0);
+    let progress = hold.progress().or(rescue.progress()).or(mask.progress()).or(coolant.progress()).filter(|p| *p > 0.0);
     for (part, mut n) in &mut nodes {
         match *part {
             ReticlePart::Root => set_display(&mut n, if seated || controls.free_cursor { Display::None } else { Display::Flex }),

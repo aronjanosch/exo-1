@@ -71,6 +71,8 @@ pub fn contents(rack: RackId, defs: &ItemDefs) -> Container {
             put(&mut c, defs, "fuse", 2);
             // A hand lamp for the dark (#329).
             put(&mut c, defs, "hand_lamp", 1);
+            // Three coolant canisters for the wall tank (#331): one place, stack 3.
+            put(&mut c, defs, "coolant_canister", 3);
         }
         _ => {}
     }
@@ -143,6 +145,7 @@ mod tests {
         assert_eq!(n(CRATE_A, "bandage"), 4);
         assert_eq!(n(CRATE_A, "oxy"), 2);
         assert_eq!(n(CRATE_A, "hand_lamp"), 1);
+        assert_eq!(n(CRATE_A, "coolant_canister"), 3);
         for rack in [CRATE_B, CRATE_C] {
             assert_eq!(contents(rack, &d).count(&item_core::container::ItemKind::new("oxy")), 0, "B and C start empty");
         }

@@ -645,7 +645,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "engine_room" => engine_room::engine_room_steps(&mut s),
         "airlock" => airlock::airlock_steps(&mut s),
         "reactor" => reactor::reactor_steps(&mut s),
-        "coolant" => coolant::coolant_steps(&mut s),
+        "coolant" => coolant::coolant_steps(&mut s, &shot_step),
         "canisters" => canisters::canisters_steps(&mut s),
         "reactor_room" => reactor_room::reactor_room_steps(&mut s, &shot_step),
         "blast" => blast::blast_steps(&mut s),

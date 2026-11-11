@@ -111,7 +111,8 @@ pub struct Items {
     pub received: Vec<Event>,
     /// system applies the effect.
     pub used: Vec<(PlayerId, PlayerId, String)>,
-    pub refills: u32,
+    /// The players whose coolant canister the authority used up at the tank (`coolant::host_refills`).
+    pub refills: Vec<PlayerId>,
     pub canister_loads: Vec<CanisterLoad>,
     /// Fuses the host took out of a hand at a junction box (#328): the player and the box; `fuses::fit_fuses` fits them.
     pub fuse_fits: Vec<(PlayerId, u8)>,
@@ -178,7 +179,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, canister_loads: Vec::new(), fuse_fits: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new(), refilling: BTreeSet::new(), using: BTreeMap::new(), mask_uses: Vec::new(), lamp_uses: Vec::new(), game_over_seen: false, dig: DigLink::default(), fab: FabLink::default() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: Vec::new(), canister_loads: Vec::new(), fuse_fits: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new(), refilling: BTreeSet::new(), using: BTreeMap::new(), mask_uses: Vec::new(), lamp_uses: Vec::new(), game_over_seen: false, dig: DigLink::default(), fab: FabLink::default() }
     }
 
     pub fn me(&self) -> PlayerId {
@@ -336,7 +337,7 @@ impl Items {
         self.net_out.push(NetOut::GameOver);
     }
 
-    pub fn take_refills(&mut self) -> u32 {
+    pub fn take_refills(&mut self) -> Vec<PlayerId> {
         std::mem::take(&mut self.refills)
     }
 
@@ -486,7 +487,7 @@ impl Items {
                 if let Event::Used { player, target, effect } = &ev {
                     self.used.push((*player, *target, effect.clone()));
                     if effect == crate::dev_area::engineering::coolant::REFILL {
-                        self.refills += 1;
+                        self.refills.push(*player);
                     }
                     if crate::dev_area::gear::is_gear_use(effect)
                         && let Some(slot) = used_slot

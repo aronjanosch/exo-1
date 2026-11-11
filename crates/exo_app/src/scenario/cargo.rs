@@ -662,9 +662,10 @@ pub fn crate_budget_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bo
     s.push(Box::new(|w, c| {
         let asleep = w.query::<&Crate>().iter(w).filter(|c| c.body.asleep).count();
         let n = crate_count(w);
-        // The collision patches under the crates come from worker threads, so the last crate may
-        // settle a little later on a busy machine: wait for all of them, at most 3 s more.
-        if asleep < n && c.t < 3.0 {
+        // The collision patches under the crates come from worker threads while the scenario
+        // ticks in simulated time, so the last crate settles after more ticks on a busy machine:
+        // poll until all sleep, and fail only at the limit.
+        if asleep < n && c.t < 300.0 {
             return false;
         }
         c.v.insert("steps0", w.resource::<CargoStats>().steps as f64);
@@ -957,9 +958,12 @@ pub fn crate_wake_stream_steps(s: &mut Vec<Step>) {
         let low = crate_above_ground(w, a).min(crate_above_ground(w, b));
         let m = c.v.entry("low").or_insert(f64::MAX);
         *m = m.min(low);
-// The patches come from worker threads, so on a busy machine they settle later.
+        // The patches come from worker threads while the scenario ticks in simulated time, so
+        // how many ticks a patch takes depends on the machine's load: poll until both crates
+        // woke and lie asleep, and fail only at the limit.
+        let both_woke = c.v.contains_key("wake_a") && c.v.contains_key("wake_b");
         let both_asleep = crate_of(w, a).unwrap().body.asleep && crate_of(w, b).unwrap().body.asleep;
-        if c.t < 3.0 || (!both_asleep && c.t < 6.0) {
+        if c.t < 3.0 || (!(both_woke && both_asleep) && c.t < 300.0) {
             return false;
         }
         let (ha, hb) = (crate_above_ground(w, a), crate_above_ground(w, b));

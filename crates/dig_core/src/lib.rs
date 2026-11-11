@@ -4,6 +4,9 @@
 use content_core::{parse_strict, File};
 use serde::Deserialize;
 
+pub mod pocket;
+pub use pocket::PocketConfig;
+
 pub const PATH: &str = "dig/dig.json";
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -24,6 +27,8 @@ pub struct DigConfig {
     pub regrow_s: f64,
     pub reach_m: f64,
     pub veins: Vec<VeinSpec>,
+    /// The fizz pockets around the dig site (#333).
+    pub pocket: PocketConfig,
 }
 
 impl DigConfig {
@@ -47,6 +52,7 @@ impl DigConfig {
         need(c.reach_m.is_finite() && c.reach_m > 0.0, "reach_m", "must be > 0");
         need(!c.veins.is_empty(), "veins", "needs at least one vein");
         need(c.veins.iter().all(|v| v.at.iter().all(|x| x.is_finite())), "veins", "a place must be finite");
+        e.extend(c.pocket.problems().into_iter().map(|p| format!("{PATH}: {p}")));
         if e.is_empty() { Ok(c) } else { Err(e) }
     }
 }
@@ -148,7 +154,7 @@ mod tests {
     }
 
     fn cfg() -> DigConfig {
-        DigConfig { cut_s: 2.0, cool_per_s: 0.5, chunks: 4, regrow_s: 10.0, reach_m: 2.5, veins: vec![VeinSpec { ore: "grumblite".into(), at: [0.0, 0.0] }] }
+        DigConfig { cut_s: 2.0, cool_per_s: 0.5, chunks: 4, regrow_s: 10.0, reach_m: 2.5, veins: vec![VeinSpec { ore: "grumblite".into(), at: [0.0, 0.0] }], pocket: PocketConfig { pockets: 2, min_gap_m: 8.0, range_m: 18.0, core_m: 3.0, tap_radius_m: 1.5, tap_s: 2.0, jars: 3, open_s: 60.0, reach_m: 2.5, field_half_m: 20.0, margin_m: 1.0 } }
     }
 
     fn shipped() -> DigConfig {
@@ -164,6 +170,9 @@ mod tests {
         assert!(e[0].contains("lumps"), "{e:?}");
         let zero = include_str!("../../../content/gameplay/dig/dig.json").replace("\"cut_s\": 2.5", "\"cut_s\": 0.0");
         assert!(DigConfig::parse(&zero).unwrap_err()[0].contains("cut_s"));
+        assert_eq!(c.pocket.jars, 3);
+        let bad = include_str!("../../../content/gameplay/dig/dig.json").replace("\"range_m\": 18.0", "\"range_m\": 0.0");
+        assert!(DigConfig::parse(&bad).unwrap_err()[0].contains("range_m"));
     }
 
     #[test]

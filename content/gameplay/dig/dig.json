@@ -1,5 +1,5 @@
 {
-  "_comment": "The dig run (#324): ore veins cut with the welder. Every number is a starting value, TODO(initiator). cut_s: seconds of holding the cut on one spot until a chunk comes off. cool_per_s: heat (0..1) lost per second when the cut is let go. chunks: chunks a full vein holds. regrow_s: seconds an empty vein takes to be full again. reach_m: how far the welder reaches (m). veins: ore item id and the spot, in metres from the dig site's centre (x east, y north).",
+  "_comment": "The dig run (#324): ore veins cut with the welder. Every number is a starting value, TODO(initiator). cut_s: seconds of holding the cut on one spot until a chunk comes off. cool_per_s: heat (0..1) lost per second when the cut is let go. chunks: chunks a full vein holds. regrow_s: seconds an empty vein takes to be full again. reach_m: how far the welder reaches (m). veins: ore item id and the spot, in metres from the dig site's centre (x east, y north). pocket (#333): the fizz pockets found with the sniffer; pockets: hidden pockets at a time; min_gap_m: least distance between two pockets (m); range_m: the sniffer hears this far (m); core_m: the signal's near scale (m), half of full at this distance; tap_radius_m and tap_s: how close and how long the tap is held to open one; jars: jars one pocket gives; open_s: seconds an open vent puffs; reach_m: how far an open vent reaches for a jar (m); field_half_m: half size of the search field around the dig site (m); margin_m: pockets keep this far off buildings, zones and the field's edge (m).",
   "cut_s": 2.5,
   "cool_per_s": 0.5,
   "chunks": 8,
@@ -9,5 +9,18 @@
     { "ore": "grumblite", "at": [-3.0, 0.0] },
     { "ore": "snoozium", "at": [0.5, 1.5] },
     { "ore": "wobble_quartz", "at": [3.5, -0.5] }
-  ]
+  ],
+  "pocket": {
+    "pockets": 2,
+    "min_gap_m": 8.0,
+    "range_m": 18.0,
+    "core_m": 3.0,
+    "tap_radius_m": 1.5,
+    "tap_s": 2.0,
+    "jars": 3,
+    "open_s": 60.0,
+    "reach_m": 2.5,
+    "field_half_m": 20.0,
+    "margin_m": 1.0
+  }
 }
